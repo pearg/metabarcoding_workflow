@@ -1,0 +1,33 @@
+input_qza:
+  class: File
+  path: _INPUT_PATH_
+
+forward_barcodes_file:
+  class: File
+  path: _BARCODES_FILE_
+
+reverse_barcodes_file:
+  class: File
+  path: _BARCODES_FILE_
+
+forward_barcodes_column: forward-sequence
+
+reverse_barcodes_column: reverse-sequence
+
+output_sample_sequences:
+  class: File
+  path: _OUTPUT_SEQUENCES_
+
+output_untrimmed_sequences:
+  class: File
+  path: _OUTPUT_UNTRIMMED_
+  
+results_path:
+  class: Directory
+  path: ../results
+
+# thread: 4
+
+log_file:
+  class: File
+  path: _LOG_PATH_

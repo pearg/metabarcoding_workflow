@@ -1,0 +1,15 @@
+input_path:
+   class: Directory
+   path: _INPUT_PATH_
+
+library_type: SampleData[PairedEndSequencesWithQuality]
+
+input_format: CasavaOneEightSingleLanePerSampleDirFmt
+
+output_path: 
+   class: File
+   path: _OUTPUT_PATH_
+
+results_path:
+  class: Directory
+  path: ../results

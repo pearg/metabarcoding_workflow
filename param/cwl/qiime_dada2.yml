@@ -1,0 +1,27 @@
+input_qza:
+  class: File
+  path: _INPUT_PATH_
+
+output_dir:
+  class: Directory
+  path: _OUTPUT_DIR_
+
+forward_trunc_length: _FORWARD_TRUNC_
+
+reverse_trunc_length: _REVERSE_TRUNC_
+
+stats_output:
+  class: File
+  path: _STATS_PATH_
+
+seq_output:
+  class: File
+  path: _SEQ_PATH_
+
+table_output:
+  class: File
+  path: _TABLE_PATH_
+
+results_path:
+  class: Directory
+  path: ../results

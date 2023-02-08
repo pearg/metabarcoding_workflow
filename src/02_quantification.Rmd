@@ -1,0 +1,551 @@
+---
+title: "Metabarcoding Quantification"
+description: |
+  A QIIME2-based metabarcoding workflow. Part 2.
+author:
+  - name: Your Name Here
+    url: https://example.com/
+    affiliation: Example Organisation
+    affiliation_url: https://example.com/
+    orcid_id: 0000-0000-0000-0000
+  - name: Jessica Chung
+    url: https://github.com/jessicachung
+    affiliation: Melbourne Bioinformatics, PEARG
+date: "`r Sys.Date()`"
+output: 
+  distill::distill_article:
+    toc: true
+    toc_depth: 4
+    df_print: paged
+    code_folding: true
+    highlight: haddock
+    highlight_downlit: false
+    css: "custom.css"
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning=TRUE, message=TRUE, error=TRUE, echo=TRUE, results="hold")
+knitr::opts_knit$set(root.dir = "..")
+options(digits=4)
+options(width=120)
+```
+
+
+< #TODO: Write documentation about the workflow >
+
+
+# Load
+
+```{r message=FALSE, warning=FALSE}
+# Load workspace from the previous notebook
+load(here::here("cache/01.RData"))
+
+suppressPackageStartupMessages({
+  library(systemPipeR)
+  library(tidyverse)
+  library(here)
+  library(patchwork)
+  library(rmarkdown)
+  library(fs)
+  library(qiime2R)
+})
+
+xaringanExtra::use_panelset()
+```
+
+```{r}
+# Append qiime2 path to PATH
+current_path_env <- Sys.getenv("PATH")
+Sys.setenv(PATH=paste0("/mnt/galaxy/gvl/software/shared_envs/qiime2/bin:",
+                       current_path_env))
+```
+
+
+# Combine into amplicon groups
+
+### Extract step
+
+Create a directory for each amplicon group.
+
+```{r}
+# Create output directories (separate directory for each amplicon group)
+combined_dir <- file.path(results_dir, "combined")
+mkdir(combined_dir)
+
+for (a in amplicon_groups) {
+  mkdir(file.path(combined_dir, a))
+}
+```
+
+```{r}
+# Setup targets
+targets <- data.frame(FileName=extract_targets(trim, "output"),
+                      SampleName=extract_targets(trim, "SampleName"),
+                      Factor=extract_targets(trim, "Factor"),
+                      amplicon_group=extract_targets(trim, "amplicon_group"))
+
+
+targets <- targets %>% 
+  mutate(output_r1=file.path(combined_dir, amplicon_group, 
+                             paste0(Factor, "_X_L001_R1_001.fastq.gz")),
+         output_r2=file.path(combined_dir, amplicon_group, 
+                             paste0(Factor, "_X_L001_R2_001.fastq.gz")))
+
+combine_1_targets <- here("tmp/combine_1_targets.txt")
+write_targets(targets, file=combine_1_targets)
+```
+
+
+
+::::: {.panelset}
+
+::: {.panel}
+
+#### Run output {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+combine_1 <- loadWorkflow(targets=combine_1_targets, wf_file="qiime_combine_extract.cwl", 
+    input_file="qiime_combine_extract.yml", dir_path=cwl_path)
+combine_1 <- set_logs_dir(combine_1, logs_dir)
+combine_1@yamlinput$extract_wrapper$path <- file.path(cwl_path, "qiime_combine_extract_wrapper.sh")
+combine_1@yamlinput$output_dir$path <- combined_dir
+combine_1 <- renderWF(combine_1, inputvars=c(FileName="_INPUT_PATH_",
+                                             output_r1="_OUTPUT_R1_PATH_",
+                                             output_r2="_OUTPUT_R2_PATH_",
+                                             amplicon_group="_AMPLICON_GROUP_",
+                                             Factor="_SAMPLE_NAME_"))
+run_jobs(combine_1)
+```
+
+:::
+
+::: {.panel}
+
+#### Command list {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+# Print commands that were run
+cmdlist(combine_1)
+```
+
+:::
+
+::: {.panel}
+
+#### Output directory files {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+# List files in output directory
+dir_tree(combined_dir)
+```
+
+:::
+
+::::
+
+
+### Import step
+
+```{r}
+# Setup targets
+targets <- data.frame(FileName=dirname(extract_targets(combine_1, "output_r1")),
+                      SampleName=extract_targets(combine_1, "amplicon_group"),
+                      amplicon_group=extract_targets(combine_1, "amplicon_group"))
+targets <- unique(targets)
+
+targets <- targets %>% 
+  mutate(output=file.path(combined_dir, paste0(amplicon_group, ".qza")))
+
+combine_2_targets <- here("tmp/combine_2_targets.txt")
+write_targets(targets, file=combine_2_targets)
+```
+
+
+::::: {.panelset}
+
+::: {.panel}
+
+#### Run output {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+combine_2 <- loadWorkflow(targets=combine_2_targets, wf_file="qiime_combine_import.cwl", 
+    input_file="qiime_combine_import.yml", dir_path=cwl_path)
+combine_2 <- set_logs_dir(combine_2, logs_dir)
+combine_2 <- renderWF(combine_2, inputvars=c(FileName="_INPUT_PATH_",
+                                             output="_OUTPUT_PATH_"))
+run_jobs(combine_2)
+```
+
+:::
+
+::: {.panel}
+
+#### Command list {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+# Print commands that were run
+cmdlist(combine_2)
+```
+
+:::
+
+::: {.panel}
+
+#### Output directory files {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+# List files in output directory
+dir_tree(combined_dir)
+```
+
+:::
+
+::::
+
+
+-----
+
+# DADA2
+
+First, define the lengths that amplicon groups will be truncated to.
+
+```{r}
+# TODO: Custom truncation lengths from file? Don't know how this should be handled
+truncation_lengths <- data.frame(
+  SampleName = c("short", "left", "right", "long"),
+  forward_trunc_length = c(140, 200, 200, 200),
+  reverse_trunc_length = c(140, 200, 200, 200)
+)
+paged_table(truncation_lengths)
+```
+
+
+```{r}
+dada2_dir <- file.path(results_dir, "dada2")
+mkdir(dada2_dir)
+
+# Setup targets
+targets <- data.frame(FileName=extract_targets(combine_2, "output"),
+                      SampleName=extract_targets(combine_2, "SampleName"),
+                      amplicon_group=extract_targets(combine_2, "amplicon_group"))
+
+# Join with truncation length parameters and check no missing values
+targets <- full_join(targets, truncation_lengths, by="SampleName")
+stopifnot(all(! is.na(targets)))
+
+
+targets <- targets %>% 
+  mutate(stats_output=file.path(dada2_dir, paste0(amplicon_group, "_denoising_stats.qza")),
+         seq_output=file.path(dada2_dir, paste0(amplicon_group, "_representative_sequences.qza")),
+         table_output=file.path(dada2_dir, paste0(amplicon_group, "_table.qza"))
+  )
+#         metadata_path=metadata_filename)
+
+dada2_targets <- here("tmp/dada2_targets.txt")
+write_targets(targets, file=dada2_targets)
+```
+
+
+::::: {.panelset}
+
+::: {.panel}
+
+#### Run output {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+dada2 <- loadWorkflow(targets=dada2_targets, wf_file="qiime_dada2.cwl", 
+    input_file="qiime_dada2.yml", dir_path=cwl_path)
+dada2 <- set_logs_dir(dada2, logs_dir)
+dada2 <- renderWF(dada2, inputvars=c(FileName="_INPUT_PATH_",
+                                     forward_trunc_length="_FORWARD_TRUNC_",
+                                     reverse_trunc_length="_REVERSE_TRUNC_",
+                                     stats_output="_STATS_PATH_",
+                                     seq_output="_SEQ_PATH_",
+                                     table_output="_TABLE_PATH_"))
+run_jobs(dada2)
+```
+
+
+:::
+
+::: {.panel}
+
+#### Command list {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+# Print commands that were run
+cmdlist(dada2)
+```
+
+:::
+
+::: {.panel}
+
+#### Output directory files {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+# List files in output directory
+dir_tree(dada2_dir)
+```
+
+:::
+
+::::
+
+-----
+
+# Visualisation files
+
+```{r}
+# TODO
+```
+
+
+
+-----
+
+# Assign taxonomy
+
+Use the vsearch classifier to assign taxonomy to sequences.
+
+(parameters need to be changed depending on what results you want)
+
+
+```{r}
+# TSV file with taxonomy information
+coi_ids=list(
+  short=here("ref/COI_short_fragment_id_to_taxonomy_060319.txt"),
+  left="",
+  right="",
+  long=""
+)
+
+# FASTA file with COI sequences
+fasta_files=list(
+  short=here("ref/COI_short_fragment_database_060319.fasta"),
+  left="",
+  right="",
+  long=""
+)
+
+taxonomy_ref <- data.frame(SampleName=names(fasta_files),
+                           coi_id_file=unlist(coi_ids[names(fasta_files)]),
+                           fasta_file=unlist(fasta_files[names(fasta_files)]))
+```
+
+```{r}
+classification_dir <- file.path(results_dir, "classification")
+mkdir(classification_dir)
+
+# Setup targets
+targets <- data.frame(FileName=extract_targets(dada2, "seq_output"),
+                      SampleName=extract_targets(dada2, "SampleName"),
+                      amplicon_group=extract_targets(dada2, "amplicon_group"),
+                      table_qza=extract_targets(dada2, "table_output"))
+
+# Join with truncation length parameters and check no missing values
+targets <- full_join(targets, taxonomy_ref, by="SampleName")
+stopifnot(all(! is.na(targets)))
+
+targets <- targets %>% 
+  mutate(classification_output=
+           file.path(classification_dir, paste0(amplicon_group, "_classification.qza")),
+         tabulation_output=
+           file.path(dada2_dir, paste0(amplicon_group, "_classification.qzv"))
+  )
+
+classification_targets <- here("tmp/classification_targets.txt")
+# WIP: For the moment, only run the short amplicions
+write_targets(targets %>% head(1), file=classification_targets)
+```
+
+
+
+::::: {.panelset}
+
+::: {.panel}
+
+#### Run output {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+classification <- loadWorkflow(targets=classification_targets,
+                               wf_file="qiime_taxonomy.cwl", 
+                               input_file="qiime_taxonomy.yml", dir_path=cwl_path)
+classification <- set_logs_dir(classification, logs_dir)
+classification@yamlinput$taxonomy_wrapper$path <- 
+  file.path(cwl_path, "qiime_taxonomy_wrapper.sh")
+classification@yamlinput$output_dir$path <- classification_dir
+classification@yamlinput$perc_identity <- 0.9
+classification@yamlinput$min_consensus <- 0.9
+classification <- renderWF(classification, 
+                           inputvars=c(FileName="_INPUT_REP_SEQ_",
+                                       coi_id_file="_INPUT_TSV_",
+                                       fasta_file="_INPUT_FASTA_",
+                                       amplicon_group="_AMPLICON_GROUP_",
+                                       classification_output="_OUTPUT_PATH_"))
+
+run_jobs(classification)
+```
+
+
+:::
+
+::: {.panel}
+
+#### Command list {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+# Print commands that were run
+cmdlist(classification)
+```
+
+:::
+
+::: {.panel}
+
+#### Output directory files {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+# List files in output directory
+dir_tree(classification_dir)
+```
+
+:::
+
+::::
+
+-----
+
+# Quantification by taxonomy
+
+Collapse features on taxonomic levels 5, 6, and 7.
+
+```{r}
+collapsed_dir <- file.path(results_dir, "feature_tables_by_taxa")
+mkdir(collapsed_dir)
+
+# Setup targets
+targets <- data.frame(FileName=extract_targets(classification, "classification_output"),
+                      SampleName=extract_targets(classification, "SampleName"),
+                      amplicon_group=extract_targets(classification, "amplicon_group"),
+                      table_input=extract_targets(classification, "table_qza"))
+
+targets <- targets %>% 
+  mutate(collapsed_output=
+           file.path(collapsed_dir, paste0(amplicon_group, "_table_l7.qza"))
+  )
+#         metadata_path=metadata_filename)
+
+collapse_targets <- here("tmp/collapse_targets.txt")
+write_targets(targets, file=collapse_targets)
+```
+
+::::: {.panelset}
+
+::: {.panel}
+
+#### Run output {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+collapse <- loadWorkflow(targets=collapse_targets,
+                               wf_file="qiime_collapse.cwl", 
+                               input_file="qiime_collapse.yml", dir_path=cwl_path)
+collapse <- set_logs_dir(collapse, logs_dir)
+collapse@yamlinput$collapse_wrapper$path <- 
+  file.path(cwl_path, "qiime_collapse_wrapper.sh")
+collapse@yamlinput$output_dir$path <- collapsed_dir
+collapse <- renderWF(collapse, 
+                     inputvars=c(FileName="_INPUT_TAXONOMY_",
+                                 table_input="_INPUT_TABLE_",
+                                 amplicon_group="_AMPLICON_GROUP_",
+                                 collapsed_output="_OUTPUT_PATH_"))
+run_jobs(collapse)
+```
+
+
+:::
+
+::: {.panel}
+
+#### Command list {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+# Print commands that were run
+cmdlist(collapse)
+```
+
+:::
+
+::: {.panel}
+
+#### Output directory files {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+# List files in output directory
+dir_tree(collapsed_dir)
+```
+
+:::
+
+::::
+
+
+# Wrangle outputs (WIP)
+
+```{r}
+amplicon_group <- "short"
+
+short_table <- qiime2R::read_qza(
+  file.path(dada2_dir, paste0(amplicon_group, "_table.qza")))
+short_sequences <- qiime2R::read_qza(
+  file.path(dada2_dir, paste0(amplicon_group, "_representative_sequences.qza")))
+short_classification <- qiime2R::read_qza(
+  file.path(classification_dir, paste0(amplicon_group, "_classification.qza")))
+short_taxa_l5 <- qiime2R::read_qza(
+  file.path(collapsed_dir, paste0(amplicon_group, "_table_l5.qza")))
+```
+
+
+```{r}
+short_df <- data.frame(short_table$data) %>% 
+  tibble::rownames_to_column("Feature.ID") %>%
+  full_join(short_classification$data, by="Feature.ID")
+short_seq <- data.frame(short_sequences$data) %>%
+  tibble::rownames_to_column("Feature.ID")
+stopifnot(short_seq$Feature.ID == short_df$Feature.ID)
+
+short_df <- full_join(short_df, short_seq, by="Feature.ID")
+paged_table(short_df)
+```
+
+```{r}
+short_taxa_l5$data %>% 
+  as.data.frame() %>%
+  paged_table()
+```
+
+
+-----
+
+# Save output
+
+Save output so it can be loaded in subsequent notebooks.
+
+```{r}
+save.image(here("cache/02.RData"))
+```
+
+-----
+
+# Session Info
+
+```{r}
+if (nzchar(system.file(package="devtools"))) {
+  devtools::session_info()
+} else {
+  sessionInfo()
+}
+```
+

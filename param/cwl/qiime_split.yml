@@ -1,0 +1,19 @@
+input_qza:
+  class: File
+  path: _INPUT_PATH_
+
+metadata_file:
+  class: File
+  path: _METADATA_PATH_
+
+condition: _CONDITION_
+
+#condition: "\"[group] == 'short'\""
+
+output_file:
+  class: File
+  path: _OUTPUT_PATH_
+  
+results_path:
+  class: Directory
+  path: ../results

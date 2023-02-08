@@ -1,0 +1,13 @@
+input_path:
+   class: Directory
+   path: _INPUT_PATH_
+
+library_type: MultiplexedPairedEndBarcodeInSequence
+   
+output_path: 
+   class: File
+   path: _OUTPUT_PATH_
+
+results_path:
+  class: Directory
+  path: ../results

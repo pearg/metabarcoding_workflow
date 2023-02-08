@@ -1,0 +1,19 @@
+input_qza:
+  class: File
+  path: _INPUT_PATH_
+
+adapter_f: _ADAPTER_F_
+
+adapter_r: _ADAPTER_R_
+
+output_file:
+  class: File
+  path: _OUTPUT_PATH_
+
+log_file:
+  class: File
+  path: _LOG_PATH_
+
+results_path:
+  class: Directory
+  path: ../results

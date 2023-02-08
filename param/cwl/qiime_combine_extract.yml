@@ -1,0 +1,27 @@
+extract_wrapper:
+  class: File
+  path: _WRAPPER_PATH_
+
+input_qza:
+  class: File
+  path: _INPUT_PATH_
+
+output_dir:
+  class: Directory
+  path: _OUTPUT_DIR_
+
+amplicon_group: _AMPLICON_GROUP_
+
+sample_name: _SAMPLE_NAME_
+
+output_r1_file:
+  class: File
+  path: _OUTPUT_R1_PATH_
+
+output_r2_file:
+  class: File
+  path: _OUTPUT_R1_PATH_
+  
+results_path:
+  class: Directory
+  path: ../results

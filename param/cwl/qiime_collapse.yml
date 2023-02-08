@@ -1,0 +1,25 @@
+collapse_wrapper:
+  class: File
+  path: _WRAPPER_PATH_
+
+input_table:
+  class: File
+  path: _INPUT_TABLE_
+  
+input_taxonomy:
+  class: File
+  path: _INPUT_TAXONOMY_
+
+output_dir:
+  class: Directory
+  path: _OUTPUT_DIR_
+
+amplicon_group: _AMPLICON_GROUP_
+
+output_file:
+  class: File
+  path: _OUTPUT_PATH_
+
+results_path:
+  class: Directory
+  path: ../results

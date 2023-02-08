@@ -1,0 +1,33 @@
+taxonomy_wrapper:
+  class: File
+  path: _WRAPPER_PATH_
+
+input_tsv:
+  class: File
+  path: _INPUT_TSV_
+  
+input_fasta:
+  class: File
+  path: _INPUT_FASTA_
+
+input_representative_sequences:
+  class: File
+  path: _INPUT_REP_SEQ_
+
+output_dir:
+  class: Directory
+  path: _OUTPUT_DIR_
+
+amplicon_group: _AMPLICON_GROUP_
+
+perc_identity: _PERC_IDENTITY_
+
+min_consensus: _MIN_CONSENSUS_
+
+output_file:
+  class: File
+  path: _OUTPUT_PATH_
+
+results_path:
+  class: Directory
+  path: ../results

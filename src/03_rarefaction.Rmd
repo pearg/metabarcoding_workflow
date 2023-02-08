@@ -1,0 +1,124 @@
+---
+title: "Metabarcoding Rarefaction"
+description: |
+  A QIIME2-based metabarcoding workflow. Part 3.
+author:
+  - name: Your Name Here
+    url: https://example.com/
+    affiliation: Example Organisation
+    affiliation_url: https://example.com/
+    orcid_id: 0000-0000-0000-0000
+  - name: Jessica Chung
+    url: https://github.com/jessicachung
+    affiliation: Melbourne Bioinformatics, PEARG
+date: "`r Sys.Date()`"
+output: 
+  distill::distill_article:
+    toc: true
+    toc_depth: 4
+    df_print: paged
+    code_folding: true
+    highlight: haddock
+    highlight_downlit: false
+    css: "custom.css"
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning=TRUE, message=TRUE, error=TRUE, echo=TRUE, results="hold")
+knitr::opts_knit$set(root.dir = "..")
+options(digits=4)
+options(width=120)
+```
+
+
+< #TODO: Write documentation about the workflow >
+
+
+# Load
+
+```{r message=FALSE, warning=FALSE}
+# Load workspace from the previous notebook
+load(here::here("cache/02.RData"))
+
+suppressPackageStartupMessages({
+  library(systemPipeR)
+  library(tidyverse)
+  library(here)
+  library(patchwork)
+  library(rmarkdown)
+  library(fs)
+  library(qiime2R)
+})
+
+xaringanExtra::use_panelset()
+```
+
+```{r}
+# Append qiime2 path to PATH
+current_path_env <- Sys.getenv("PATH")
+Sys.setenv(PATH=paste0("/mnt/galaxy/gvl/software/shared_envs/qiime2/bin:",
+                       current_path_env))
+```
+
+-----
+
+# Rarefaction (WIP)
+
+```{r}
+# TODO
+```
+
+
+
+This step is kinda manual with setting min/max depth size... Dunno how best to handle
+
+```
+
+for AMPLICON in short right; do
+    echo ${AMPLICON}
+    qiime diversity alpha-rarefaction \
+        --i-table data/feature_tables/${AMPLICON}_table.qza \
+        --p-min-depth 2000 \
+        --p-max-depth 37000 \
+        --p-steps 25 \
+        --p-metrics 'observed_features' \
+        --o-visualization data/rarefaction/${AMPLICON}_mult_rarefaction_2k_to_37K_by_sample.qzv
+done
+
+for AMPLICON in short right; do
+    echo ${AMPLICON}
+    qiime diversity alpha-rarefaction \
+        --i-table data/feature_tables/${AMPLICON}_table.qza \
+        --p-min-depth 20 \
+        --p-max-depth 10000 \
+        --p-steps 25 \
+        --p-metrics 'observed_features' \
+        --o-visualization data/rarefaction/${AMPLICON}_mult_rarefaction_20_to_10K_by_sample.qzv
+done
+```
+
+-----
+
+# Save output
+
+Save output so it can be loaded in subsequent notebooks.
+
+```{r}
+# save.image(here("cache/03.RData"))
+```
+
+-----
+
+# Session Info
+
+```{r}
+if (nzchar(system.file(package="devtools"))) {
+  devtools::session_info()
+} else {
+  sessionInfo()
+}
+```
+
+
