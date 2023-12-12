@@ -1,0 +1,15 @@
+input_qza:
+  class: File
+  path: _INPUT_PATH_
+
+output_dir:
+  class: Directory
+  path: _OUTPUT_DIR_
+
+output_qzv:
+  class: File
+  path: _OUTPUT_QZV_
+
+results_path:
+  class: Directory
+  path: ../results

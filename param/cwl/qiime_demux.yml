@@ -2,17 +2,17 @@ input_qza:
   class: File
   path: _INPUT_PATH_
 
-forward_barcodes_file:
+forward_primers_file:
   class: File
-  path: _BARCODES_FILE_
+  path: _PRIMERS_FILE_
 
-reverse_barcodes_file:
+reverse_primers_file:
   class: File
-  path: _BARCODES_FILE_
+  path: _PRIMERS_FILE_
 
-forward_barcodes_column: forward-sequence
+forward_primers_column: forward-sequence
 
-reverse_barcodes_column: reverse-sequence
+reverse_primers_column: reverse-sequence
 
 output_sample_sequences:
   class: File

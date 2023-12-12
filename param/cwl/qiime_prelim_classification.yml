@@ -2,17 +2,17 @@ taxonomy_wrapper:
   class: File
   path: _WRAPPER_PATH_
 
-input_tsv:
-  class: File
-  path: _INPUT_TSV_
-  
-input_fasta:
-  class: File
-  path: _INPUT_FASTA_
-
 input_representative_sequences:
   class: File
   path: _INPUT_REP_SEQ_
+
+input_seq_db:
+  class: File
+  path: _INPUT_SEQ_DB_
+  
+input_taxonomy_db:
+  class: File
+  path: _INPUT_TAXONOMY_DB_
 
 output_dir:
   class: Directory
@@ -24,9 +24,17 @@ perc_identity: _PERC_IDENTITY_
 
 min_consensus: _MIN_CONSENSUS_
 
+n_threads: _N_THREADS_
+
+classification_output: _CLASSIFICATION_OUTPUT_
+
+search_results_output: _SEARCH_OUTPUT_
+
+tmp_dir: _TMP_DIR_
+                                                   
 output_file:
   class: File
-  path: _OUTPUT_PATH_
+  path: _CLASSIFICATION_OUTPUT_
 
 results_path:
   class: Directory

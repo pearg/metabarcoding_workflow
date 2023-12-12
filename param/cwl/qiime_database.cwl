@@ -1,10 +1,10 @@
 ################################################################
-##                    qiime_collapse.cwl                      ##
+##                    qiime_database.cwl                      ##
 ################################################################
 
 cwlVersion: v1.0
 class: CommandLineTool
-doc: "https://docs.qiime2.org/2022.11/plugins/available/taxa/collapse/"
+doc: ""
 hints:
   SoftwareRequirement:
     packages:
@@ -13,42 +13,31 @@ hints:
 baseCommand: ["bash"]
 
 inputs:
-  collapse_wrapper:
+  database_wrapper:
     label: "Path to bash script"
     type: File
     inputBinding:
       position: 1
-  input_table:
-    label: "Path to qiime feature table file"
+  input_taxonomy:
+    label: "Path to taxonomy ID file"
     type: File
     inputBinding:
       position: 2
-  input_taxonomy:
-    label: "Path to qiime taxonomy classification file"
+  input_fasta:
+    label: "Path to fasta file"
     type: File
     inputBinding:
       position: 3
   output_dir:
-    label: "Output path for collapsed taxonomy files"
+    label: "Output path for taxonomy and classification files"
     type: string
     inputBinding:
       position: 4
-  amplicon_group:
-    label: "Amplicon group name"
+  output_prefix:
+    label: "Output prefix name (database name and amplicon group)"
     type: string
     inputBinding:
       position: 5
-  p_identity:
-    label: "Percent identity match threshold for previous classification step"
-    type: string
-    inputBinding:
-      position: 6
-  taxonomy_level:
-    label: "Taxonomy level for collapse"
-    type: string
-    inputBinding:
-      position: 7
-
 
 outputs:
   output:

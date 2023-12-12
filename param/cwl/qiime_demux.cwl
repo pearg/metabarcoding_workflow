@@ -18,24 +18,24 @@ inputs:
     type: File
     inputBinding:
       prefix: --i-seqs
-  forward_barcodes_file:
-    label: "Path to file containing forward barcodes"
+  forward_primers_file:
+    label: "Path to file containing forward primers"
     type: File
     inputBinding:
       prefix: --m-forward-barcodes-file
-  forward_barcodes_column:
-    label: "Column name of forward sequences in barcodes file"
+  forward_primers_column:
+    label: "Column name of forward sequences in primers file"
     type: string
     default: "forward-sequence"
     inputBinding:
       prefix: --m-forward-barcodes-column
-  reverse_barcodes_file:
-    label: "Path to file containing reverse barcodes"
+  reverse_primers_file:
+    label: "Path to file containing reverse primers"
     type: File
     inputBinding:
       prefix: --m-reverse-barcodes-file
-  reverse_barcodes_column:
-    label: "Column name of reverse sequences in barcodes file"
+  reverse_primers_column:
+    label: "Column name of reverse sequences in primers file"
     type: string
     default: "reverse-sequence"
     inputBinding:

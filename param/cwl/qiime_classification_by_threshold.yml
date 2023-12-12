@@ -1,0 +1,35 @@
+taxonomy_wrapper:
+  class: File
+  path: _WRAPPER_PATH_
+
+input_representative_sequences:
+  class: File
+  path: _INPUT_REP_SEQ_
+
+input_seq_db:
+  class: File
+  path: _INPUT_SEQ_DB_
+  
+input_taxonomy_db:
+  class: File
+  path: _INPUT_TAXONOMY_DB_
+
+output_dir:
+  class: Directory
+  path: _OUTPUT_DIR_
+
+min_consensus: _MIN_CONSENSUS_
+
+n_threads: _N_THREADS_
+
+file_list: _FILE_LIST_
+
+tmp_dir: _TMP_DIR_
+
+output_file:
+  class: File
+  path: _CLASSIFICATION_OUTPUT_
+
+results_path:
+  class: Directory
+  path: ../results

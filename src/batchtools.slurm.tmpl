@@ -38,7 +38,9 @@ log.file = normalizePath(log.file, winslash = "/", mustWork = FALSE)
 ## source /etc/profile
 ## module add ...
 
-export PATH="/mnt/galaxy/gvl/software/shared_envs/qiime2/bin:$PATH"
+export PATH="/mnt/galaxy/gvl/software/shared_envs/qiime2_2023-07/bin:$PATH"
+export PYTHONPATH="/mnt/galaxy/gvl/software/shared_envs/qiime2_2023-07/lib/python3.8/site-packages/"
+# export TMPDIR="/mnt/galaxy/tmp"
 
 ## Export value of DEBUGME environemnt var to slave
 export DEBUGME=<%= Sys.getenv("DEBUGME") %>

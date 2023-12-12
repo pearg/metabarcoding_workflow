@@ -33,15 +33,12 @@ options(width=120)
 ```
 
 
-< #TODO: Write documentation about the workflow >
+This notebook performs quantification for your metabarcoding analysis. This notebook depends on the outputs of the previous notebook, `01_preprocessing.Rmd` where we preprocessed the sequencing data. In this notebook, first, we'll create new QIIME artifact files for each amplicon group, so each file contains all samples corresponding to that group. We'll then use DADA2 to denoise sequence data and generate feature tables and feature data. Lastly, we'll run [LULU](https://github.com/tobiasgf/lulu) to perform distribution-based post-clustering curation of the ASV sequences.
 
 
 # Load
 
 ```{r message=FALSE, warning=FALSE}
-# Load workspace from the previous notebook
-load(here::here("cache/01.RData"))
-
 suppressPackageStartupMessages({
   library(systemPipeR)
   library(tidyverse)
@@ -50,9 +47,13 @@ suppressPackageStartupMessages({
   library(rmarkdown)
   library(fs)
   library(qiime2R)
+  library(lulu)
 })
 
 xaringanExtra::use_panelset()
+
+# Load workspace from the previous notebook
+load(here::here("cache/01.RData"))
 ```
 
 ```{r}
@@ -60,6 +61,14 @@ xaringanExtra::use_panelset()
 current_path_env <- Sys.getenv("PATH")
 Sys.setenv(PATH=paste0("/mnt/galaxy/gvl/software/shared_envs/qiime2/bin:",
                        current_path_env))
+Sys.setenv(PYTHONNOUSERSITE="/mnt/galaxy/gvl/software/shared_envs/qiime2/lib/python*/site-packages/")
+```
+
+```{r}
+use_slurm <- TRUE
+slurm_threads <- 8
+slurm_resources <- list(partition="main", ntasks=1, ncpus=slurm_threads, memory=4096)
+slurm_n_jobs <- 10
 ```
 
 
@@ -148,6 +157,8 @@ dir_tree(combined_dir)
 
 ### Import step
 
+Import files into a single qiime artifact file for each amplicon group.
+
 ```{r}
 # Setup targets
 targets <- data.frame(FileName=dirname(extract_targets(combine_1, "output_r1")),
@@ -215,12 +226,13 @@ First, define the lengths that amplicon groups will be truncated to.
 # TODO: Custom truncation lengths from file? Don't know how this should be handled
 truncation_lengths <- data.frame(
   SampleName = c("short", "left", "right", "long"),
-  forward_trunc_length = c(140, 200, 200, 200),
+  forward_trunc_length = c(140, 200, 140, 200),
   reverse_trunc_length = c(140, 200, 200, 200)
 )
 paged_table(truncation_lengths)
 ```
 
+Now we'll run DADA2 to quantify ASVs.
 
 ```{r}
 dada2_dir <- file.path(results_dir, "dada2")
@@ -241,7 +253,9 @@ targets <- targets %>%
          seq_output=file.path(dada2_dir, paste0(amplicon_group, "_representative_sequences.qza")),
          table_output=file.path(dada2_dir, paste0(amplicon_group, "_table.qza"))
   )
-#         metadata_path=metadata_filename)
+
+# targets <- targets %>% filter(SampleName == "short")
+targets <- targets %>% filter(SampleName %in% c("short", "right"))
 
 dada2_targets <- here("tmp/dada2_targets.txt")
 write_targets(targets, file=dada2_targets)
@@ -296,71 +310,24 @@ dir_tree(dada2_dir)
 
 -----
 
-# Visualisation files
+# DADA2 visualisation
 
 ```{r}
-# TODO
-```
-
-
-
------
-
-# Assign taxonomy
-
-Use the vsearch classifier to assign taxonomy to sequences.
-
-(parameters need to be changed depending on what results you want)
-
-
-```{r}
-# TSV file with taxonomy information
-coi_ids=list(
-  short=here("ref/COI_short_fragment_id_to_taxonomy_060319.txt"),
-  left="",
-  right="",
-  long=""
-)
-
-# FASTA file with COI sequences
-fasta_files=list(
-  short=here("ref/COI_short_fragment_database_060319.fasta"),
-  left="",
-  right="",
-  long=""
-)
-
-taxonomy_ref <- data.frame(SampleName=names(fasta_files),
-                           coi_id_file=unlist(coi_ids[names(fasta_files)]),
-                           fasta_file=unlist(fasta_files[names(fasta_files)]))
-```
-
-```{r}
-classification_dir <- file.path(results_dir, "classification")
-mkdir(classification_dir)
-
 # Setup targets
 targets <- data.frame(FileName=extract_targets(dada2, "seq_output"),
                       SampleName=extract_targets(dada2, "SampleName"),
                       amplicon_group=extract_targets(dada2, "amplicon_group"),
-                      table_qza=extract_targets(dada2, "table_output"))
-
-# Join with truncation length parameters and check no missing values
-targets <- full_join(targets, taxonomy_ref, by="SampleName")
-stopifnot(all(! is.na(targets)))
+                      stats_qza=extract_targets(dada2, "stats_output"))
 
 targets <- targets %>% 
-  mutate(classification_output=
-           file.path(classification_dir, paste0(amplicon_group, "_classification.qza")),
-         tabulation_output=
-           file.path(dada2_dir, paste0(amplicon_group, "_classification.qzv"))
+  mutate(stats_qzv=
+           file.path(dada2_dir, paste0(amplicon_group, "_denoising_stats.qzv")),
   )
 
-classification_targets <- here("tmp/classification_targets.txt")
-# WIP: For the moment, only run the short amplicions
-write_targets(targets %>% head(1), file=classification_targets)
-```
+dada2_vis_targets <- here("tmp/dada2_vis_targets.txt")
 
+write_targets(targets, file=dada2_vis_targets)
+```
 
 
 ::::: {.panelset}
@@ -370,23 +337,12 @@ write_targets(targets %>% head(1), file=classification_targets)
 #### Run output {.panel-name}
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
-classification <- loadWorkflow(targets=classification_targets,
-                               wf_file="qiime_taxonomy.cwl", 
-                               input_file="qiime_taxonomy.yml", dir_path=cwl_path)
-classification <- set_logs_dir(classification, logs_dir)
-classification@yamlinput$taxonomy_wrapper$path <- 
-  file.path(cwl_path, "qiime_taxonomy_wrapper.sh")
-classification@yamlinput$output_dir$path <- classification_dir
-classification@yamlinput$perc_identity <- 0.9
-classification@yamlinput$min_consensus <- 0.9
-classification <- renderWF(classification, 
-                           inputvars=c(FileName="_INPUT_REP_SEQ_",
-                                       coi_id_file="_INPUT_TSV_",
-                                       fasta_file="_INPUT_FASTA_",
-                                       amplicon_group="_AMPLICON_GROUP_",
-                                       classification_output="_OUTPUT_PATH_"))
-
-run_jobs(classification)
+dada2_vis <- loadWorkflow(targets=dada2_vis_targets, wf_file="qiime_dada2_vis.cwl", 
+                          input_file="qiime_dada2_vis.yml", dir_path=cwl_path)
+dada2_vis <- set_logs_dir(dada2_vis, logs_dir)
+dada2_vis <- renderWF(dada2_vis, inputvars=c(stats_qza="_INPUT_PATH_",
+                                             stats_qzv="_OUTPUT_QZV_"))
+run_jobs(dada2_vis)
 ```
 
 
@@ -398,7 +354,7 @@ run_jobs(classification)
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 # Print commands that were run
-cmdlist(classification)
+cmdlist(dada2_vis)
 ```
 
 :::
@@ -409,38 +365,54 @@ cmdlist(classification)
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 # List files in output directory
-dir_tree(classification_dir)
+dir_tree(dada2_dir)
 ```
 
 :::
 
 ::::
+
+
+
+# View DADA2 stats
+
+```{r}
+paged_table(read_qza(here("results/dada2/short_denoising_stats.qza"))$data)
+```
+
+```{r}
+paged_table(read_qza(here("results/dada2/right_denoising_stats.qza"))$data)
+```
+
 
 -----
 
-# Quantification by taxonomy
+# LULU
 
-Collapse features on taxonomic levels 5, 6, and 7.
+## Run vsearch
+
+Create a match list file for LULU. This step uses vsearch to match a collection of ASVs against themselves and
+outputs a file to be used in the next step.
 
 ```{r}
-collapsed_dir <- file.path(results_dir, "feature_tables_by_taxa")
-mkdir(collapsed_dir)
+lulu_dir <- file.path(results_dir, "lulu")
+mkdir(lulu_dir)
 
 # Setup targets
-targets <- data.frame(FileName=extract_targets(classification, "classification_output"),
-                      SampleName=extract_targets(classification, "SampleName"),
-                      amplicon_group=extract_targets(classification, "amplicon_group"),
-                      table_input=extract_targets(classification, "table_qza"))
+targets <- data.frame(FileName=extract_targets(dada2, "seq_output"),
+                      SampleName=extract_targets(dada2, "SampleName"),
+                      amplicon_group=extract_targets(dada2, "amplicon_group"))
 
 targets <- targets %>% 
-  mutate(collapsed_output=
-           file.path(collapsed_dir, paste0(amplicon_group, "_table_l7.qza"))
+  mutate(match_list_path=
+           file.path(lulu_dir, paste0(amplicon_group, "_match_list.txt"))
   )
-#         metadata_path=metadata_filename)
 
-collapse_targets <- here("tmp/collapse_targets.txt")
-write_targets(targets, file=collapse_targets)
+lulu_vsearch_targets <- here("tmp/lulu_vsearch_targets.txt")
+
+write_targets(targets, file=lulu_vsearch_targets)
 ```
+
 
 ::::: {.panelset}
 
@@ -449,19 +421,18 @@ write_targets(targets, file=collapse_targets)
 #### Run output {.panel-name}
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
-collapse <- loadWorkflow(targets=collapse_targets,
-                               wf_file="qiime_collapse.cwl", 
-                               input_file="qiime_collapse.yml", dir_path=cwl_path)
-collapse <- set_logs_dir(collapse, logs_dir)
-collapse@yamlinput$collapse_wrapper$path <- 
-  file.path(cwl_path, "qiime_collapse_wrapper.sh")
-collapse@yamlinput$output_dir$path <- collapsed_dir
-collapse <- renderWF(collapse, 
-                     inputvars=c(FileName="_INPUT_TAXONOMY_",
-                                 table_input="_INPUT_TABLE_",
-                                 amplicon_group="_AMPLICON_GROUP_",
-                                 collapsed_output="_OUTPUT_PATH_"))
-run_jobs(collapse)
+lulu_vsearch <- loadWorkflow(targets=lulu_vsearch_targets,
+                                           wf_file="lulu_vsearch_prelim.cwl", 
+                                           input_file="lulu_vsearch_prelim.yml", dir_path=cwl_path)
+lulu_vsearch <- set_logs_dir(lulu_vsearch, logs_dir)
+lulu_vsearch@yamlinput$lulu_vsearch_prelim_wrapper$path <- 
+  file.path(cwl_path, "lulu_vsearch_prelim_wrapper.sh")
+lulu_vsearch@yamlinput$output_dir$path <- lulu_dir
+lulu_vsearch <- renderWF(lulu_vsearch, 
+                         inputvars=c(FileName="_INPUT_REP_SEQ_",
+                                     match_list_path="_OUTPUT_TSV_"))
+
+run_jobs(lulu_vsearch)
 ```
 
 
@@ -473,7 +444,7 @@ run_jobs(collapse)
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 # Print commands that were run
-cmdlist(collapse)
+cmdlist(lulu_vsearch)
 ```
 
 :::
@@ -484,7 +455,7 @@ cmdlist(collapse)
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 # List files in output directory
-dir_tree(collapsed_dir)
+dir_tree(lulu_dir)
 ```
 
 :::
@@ -492,40 +463,53 @@ dir_tree(collapsed_dir)
 ::::
 
 
-# Wrangle outputs (WIP)
+## Run lulu
+
+Run LULU to merge features together.
+
 
 ```{r}
-amplicon_group <- "short"
+# TODO: encapsulate this into a function after checking if lulu arguments need to be changed
+```
 
-short_table <- qiime2R::read_qza(
-  file.path(dada2_dir, paste0(amplicon_group, "_table.qza")))
-short_sequences <- qiime2R::read_qza(
-  file.path(dada2_dir, paste0(amplicon_group, "_representative_sequences.qza")))
-short_classification <- qiime2R::read_qza(
-  file.path(classification_dir, paste0(amplicon_group, "_classification.qza")))
-short_taxa_l5 <- qiime2R::read_qza(
-  file.path(collapsed_dir, paste0(amplicon_group, "_table_l5.qza")))
+```{r}
+short_table <- read_qza(here("results/dada2/short_table.qza"))
+short_table_df <- data.frame(short_table$data)
+short_match_list <- read.table(here("results/lulu/short_match_list.txt"))
+
+# TODO: Currently using default parameters
+z <- capture.output(short_lulu <- lulu(short_table_df, short_match_list))
+
+dim(short_lulu$original_table)
+dim(short_lulu$curated_table)
+```
+
+```{r}
+saveRDS(short_lulu, file=here("results/lulu/short_lulu.rds"))
 ```
 
 
 ```{r}
-short_df <- data.frame(short_table$data) %>% 
-  tibble::rownames_to_column("Feature.ID") %>%
-  full_join(short_classification$data, by="Feature.ID")
-short_seq <- data.frame(short_sequences$data) %>%
-  tibble::rownames_to_column("Feature.ID")
-stopifnot(short_seq$Feature.ID == short_df$Feature.ID)
+right_table <- read_qza(here("results/dada2/right_table.qza"))
+right_table_df <- data.frame(right_table$data)
+right_match_list <- read.table(here("results/lulu/right_match_list.txt"))
 
-short_df <- full_join(short_df, short_seq, by="Feature.ID")
-paged_table(short_df)
+# TODO: Currently using default parameters
+z <- capture.output(right_lulu <- lulu(right_table_df, right_match_list))
+
+dim(right_lulu$original_table)
+dim(right_lulu$curated_table)
 ```
 
 ```{r}
-short_taxa_l5$data %>% 
-  as.data.frame() %>%
-  paged_table()
+saveRDS(right_lulu, file=here("results/lulu/right_lulu.rds"))
 ```
 
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+# List files in output directory
+dir_tree(lulu_dir)
+```
 
 -----
 
@@ -536,6 +520,7 @@ Save output so it can be loaded in subsequent notebooks.
 ```{r}
 save.image(here("cache/02.RData"))
 ```
+
 
 -----
 

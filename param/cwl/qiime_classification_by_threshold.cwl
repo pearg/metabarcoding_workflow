@@ -1,5 +1,5 @@
 ################################################################
-##                    qiime_taxonomy.cwl                      ##
+##           qiime_classification_by_threshold.cwl            ##
 ################################################################
 
 cwlVersion: v1.0
@@ -18,43 +18,47 @@ inputs:
     type: File
     inputBinding:
       position: 1
-  input_tsv:
-    label: "Path to tsv file"
+  input_representative_sequences:
+    label: "Path to representative sequences file for querying"
     type: File
     inputBinding:
       position: 2
-  input_fasta:
-    label: "Path to fasta file"
+  input_seq_db:
+    label: "Path to database file containing sequences"
     type: File
     inputBinding:
       position: 3
-  input_representative_sequences:
-    label: "Path to representative sequences file"
+  input_taxonomy_db:
+    label: "Path to database file containing taxonomy IDs"
     type: File
     inputBinding:
       position: 4
-  output_dir:
-    label: "Output path for taxonomy and classification files"
-    type: string
-    inputBinding:
-      position: 5
-  amplicon_group:
-    label: "Amplicon group name"
-    type: string
-    inputBinding:
-      position: 6
-  perc_identity:
-    label: "Reject match if percent identity to query is lower"
-    type: float
-    default: 0.90
-    inputBinding:
-      position: 7
   min_consensus:
     label: "Minimum fraction of assignments must match top hit to be accepted as consensus assignment"
     type: float
-    default: 0.90
+    default: 0.51
+    inputBinding:
+      position: 5
+  n_threads:
+    label: "Number of threads to use"
+    type: string
+    inputBinding:
+      position: 6
+  output_file:
+    label: "Output path for merged taxonomy file"
+    type: string
     inputBinding:
       position: 7
+  file_list:
+    label: "Input path for file list of feature IDs by threshold percent identity"
+    type: string
+    inputBinding:
+      position: 8
+  tmp_dir:
+    label: "Path to tmp directory"
+    type: string
+    inputBinding:
+      position: 9
 
 outputs:
   output:

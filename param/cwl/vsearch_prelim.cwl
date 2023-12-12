@@ -4,16 +4,16 @@
 
 cwlVersion: v1.0
 class: CommandLineTool
-doc: "https://docs.qiime2.org/2022.11/plugins/available/taxa/collapse/"
+doc: ""
 hints:
   SoftwareRequirement:
     packages:
-    - package: qiime
+    - package: vsearch
 
 baseCommand: ["bash"]
 
 inputs:
-  collapse_wrapper:
+  vsearch_prelim_wrapper:
     label: "Path to bash script"
     type: File
     inputBinding:
@@ -23,35 +23,34 @@ inputs:
     type: File
     inputBinding:
       position: 2
-  input_taxonomy:
-    label: "Path to qiime taxonomy classification file"
-    type: File
+  p_identity:
+    label: "Reject if lower than identity"
+    type: float
     inputBinding:
       position: 3
-  output_dir:
-    label: "Output path for collapsed taxonomy files"
-    type: string
+  input_taxonomy:
+    label: "Path to fasta database"
+    type: File
     inputBinding:
       position: 4
-  amplicon_group:
-    label: "Amplicon group name"
+  n_threads:
+    label: "Number of threads"
     type: string
     inputBinding:
       position: 5
-  p_identity:
-    label: "Percent identity match threshold for previous classification step"
+  blast6out_path:
+    label: "Output path for vsearch blast6out file"
     type: string
     inputBinding:
       position: 6
-  taxonomy_level:
-    label: "Taxonomy level for collapse"
+  vsearch_params:
+    label: "Extra parameters for vsearch"
     type: string
     inputBinding:
       position: 7
-
 
 outputs:
   output:
     type: File
     outputBinding:
-      glob: $(inputs.output_file)
+      glob: $(inputs.blast6out_path)
