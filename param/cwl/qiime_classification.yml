@@ -1,14 +1,18 @@
-collapse_wrapper:
+taxonomy_wrapper:
   class: File
   path: _WRAPPER_PATH_
 
-input_table:
+input_representative_sequences:
   class: File
-  path: _INPUT_TABLE_
+  path: _INPUT_REP_SEQ_
+
+input_seq_db:
+  class: File
+  path: _INPUT_SEQ_DB_
   
-input_taxonomy:
+input_taxonomy_db:
   class: File
-  path: _INPUT_TAXONOMY_
+  path: _INPUT_TAXONOMY_DB_
 
 output_dir:
   class: Directory
@@ -18,7 +22,11 @@ amplicon_group: _AMPLICON_GROUP_
 
 taxonomy_level: _TAXONOMY_LEVEL_
 
-p_identity: _P_IDENTITY_
+perc_identity: _PERC_IDENTITY_
+
+min_consensus: _MIN_CONSENSUS_
+
+n_threads: _N_THREADS_
 
 output_file:
   class: File

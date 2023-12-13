@@ -1,28 +1,24 @@
-collapse_wrapper:
+database_wrapper:
   class: File
   path: _WRAPPER_PATH_
 
-input_table:
-  class: File
-  path: _INPUT_TABLE_
-  
 input_taxonomy:
   class: File
   path: _INPUT_TAXONOMY_
+  
+input_fasta:
+  class: File
+  path: _INPUT_FASTA_
 
 output_dir:
   class: Directory
   path: _OUTPUT_DIR_
 
-amplicon_group: _AMPLICON_GROUP_
-
-taxonomy_level: _TAXONOMY_LEVEL_
-
-p_identity: _P_IDENTITY_
+output_prefix: _OUTPUT_PREFIX_
 
 output_file:
   class: File
-  path: _OUTPUT_PATH_
+  path: _OUTPUT_FASTA_DB_
 
 results_path:
   class: Directory

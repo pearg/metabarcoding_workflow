@@ -1,0 +1,19 @@
+lulu_vsearch_prelim_wrapper:
+  class: File
+  path: _WRAPPER_PATH_
+
+input_table:
+  class: File
+  path: _INPUT_REP_SEQ_
+
+match_list_path:
+  class: File
+  path: _OUTPUT_TSV_
+
+output_dir:
+  class: Directory
+  path: _OUTPUT_DIR_
+  
+results_path:
+  class: Directory
+  path: ../results

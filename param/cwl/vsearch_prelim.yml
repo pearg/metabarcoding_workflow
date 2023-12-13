@@ -1,0 +1,30 @@
+vsearch_prelim_wrapper:
+  class: File
+  path: _WRAPPER_PATH_
+
+input_table:
+  class: File
+  path: _INPUT_REP_SEQ_
+
+input_taxonomy:
+  class: File
+  path: _INPUT_FASTA_DB_
+
+blast6out_path:
+  class: File
+  path: _OUTPUT_TSV_
+
+p_identity: _P_IDENTITY_
+
+n_threads: _N_THREADS_
+
+vsearch_params: _VSEARCH_PARAMS_
+
+output_dir:
+  class: Directory
+  path: _OUTPUT_DIR_
+
+  
+results_path:
+  class: Directory
+  path: ../results

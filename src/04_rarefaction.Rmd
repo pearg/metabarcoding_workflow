@@ -66,10 +66,101 @@ Sys.setenv(PATH=paste0("/mnt/galaxy/gvl/software/shared_envs/qiime2/bin:",
 
 # Rarefaction (WIP)
 
+
+
+```{r}
+rarefaction_dir <- file.path(results_dir, "rarefaction")
+mkdir(rarefaction_dir)
+
+# Setup targets
+targets <- data.frame(FileName=extract_targets(dada2, "seq_output"),
+                      SampleName=extract_targets(dada2, "SampleName"),
+                      amplicon_group=extract_targets(dada2, "amplicon_group"),
+                      table_qza=extract_targets(dada2, "table_output"))
+```
+
+```{r}
+# Rarefaction parameters
+# Rarefaction is very sample dependent and depends on sequencing depth
+# When you run a new set of parameters, new outputs will be created
+# Re-iterate until you get a set of min-depth to max-depth you're happy with
+
+# One set of parameters for all samples, or use a list?
+
+rarefaction_min_depth <- 2000
+rarefaction_max_depth <- 37000
+rarefaction_p_steps <- 25
+```
+
+
+
 ```{r}
 # TODO
 ```
 
+
+
+
+```{r}
+# targets <- targets %>% 
+#   mutate(classification_output=
+#            file.path(classification_dir, paste0(amplicon_group, "_classification.qza")),
+#          tabulation_output=
+#            file.path(dada2_dir, paste0(amplicon_group, "_classification.qzv"))
+#   )
+# 
+# classification_targets <- here("tmp/rarefaction_targets.txt")
+# 
+# # WIP: For the moment, only run the short amplicions
+# write_targets(targets %>% head(1), file=classification_targets)
+```
+
+
+::::: {.panelset}
+
+::: {.panel}
+
+#### Run output {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+dada2 <- loadWorkflow(targets=dada2_targets, wf_file="qiime_dada2.cwl", 
+    input_file="qiime_dada2.yml", dir_path=cwl_path)
+dada2 <- set_logs_dir(dada2, logs_dir)
+dada2 <- renderWF(dada2, inputvars=c(FileName="_INPUT_PATH_",
+                                     forward_trunc_length="_FORWARD_TRUNC_",
+                                     reverse_trunc_length="_REVERSE_TRUNC_",
+                                     stats_output="_STATS_PATH_",
+                                     seq_output="_SEQ_PATH_",
+                                     table_output="_TABLE_PATH_"))
+run_jobs(dada2)
+```
+
+
+:::
+
+::: {.panel}
+
+#### Command list {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+# Print commands that were run
+cmdlist(dada2)
+```
+
+:::
+
+::: {.panel}
+
+#### Output directory files {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+# List files in output directory
+dir_tree(dada2_dir)
+```
+
+:::
+
+::::
 
 
 This step is kinda manual with setting min/max depth size... Dunno how best to handle

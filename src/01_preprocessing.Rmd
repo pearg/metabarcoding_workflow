@@ -33,17 +33,19 @@ options(width=120)
 ```
 
 
-< #TODO: Write documentation about the workflow >
 
-
+This notebook runs through some preprocessing steps for metabarcoding analysis. First we'll load in some sample information containing sample metadata and primer combinations, then we'll import the FASTQ sequencing files into QIIME artifact files. We'll then demultiplex sequences based on primer combinations and split the sequences into amplicon groups. Lastly, we'll trim adapters and calculate some summary statistics.
 
 # User settings
 
-First we set the directory that stores the workflow outputs (might move this to a separate file)
+The first thing we'll do is set the directory that stores the workflow outputs.
 
 ```{r}
-# You can use the here::here function to define a path relative to the project directory or
+# You can use the here::here function to define a path relative to the project 
+#  directory or use an absolute path
 results_dir <- here::here("results")
+
+# Log files will be stored inside the logs directory inside the results directory
 logs_dir <- file.path(results_dir, "logs")
 ```
 
@@ -54,7 +56,8 @@ We also have the option to run the jobs in this workflow using SLURM if you're w
 that uses it.
 
 ```{r class.source='fold-show'}
-use_slurm <- FALSE
+# use_slurm <- FALSE
+use_slurm <- TRUE
 
 # Settings for slurm (you can ignore these if `use_slurm` is set to FALSE)
 slurm_conffile <- here::here("src/.batchtools.conf.R")
@@ -64,7 +67,7 @@ slurm_n_jobs <- 10
 ```
 
 
-# Load
+# Load libraries and files
 
 We begin by loading the necessary libraries and files.
 
@@ -81,16 +84,19 @@ suppressPackageStartupMessages({
 xaringanExtra::use_panelset()
 ```
 
-And then we add QIIME2 to the environment path (move this to separate file?).
+And then we'll add QIIME2 to the environment path.
 
 ```{r}
 # Append qiime2 path to PATH
 current_path_env <- Sys.getenv("PATH")
-Sys.setenv(PATH=paste0("/mnt/galaxy/gvl/software/shared_envs/qiime2/bin:",
+
+# Also set qiime2 conda environment in batchtools.slurm.tmpl
+Sys.setenv(PATH=paste0("/mnt/galaxy/gvl/software/shared_envs/qiime2_2023-07/bin:",
                        current_path_env))
+Sys.setenv(PYTHONPATH="/mnt/galaxy/gvl/software/shared_envs/qiime2_2023-07/lib/python3.8/site-packages/")
 ```
 
-And some functions (might move this elsewhere...)
+And define some functions (might move this elsewhere...)
 
 ```{r}
 extract_targets <- function(x, name) {
@@ -157,25 +163,25 @@ paged_table(samples_df)
 
 
 
-### Barcodes
+### Primers
 
-We also need a file that contains the barcodes that the metabarcoding project uses. We'll read in `ref/barcodes.tsv` which contains one row for each primer used. The columns of this file are required to be:
+We also need a file that contains the primers that the metabarcoding project uses. We'll read in `ref/primers.tsv` which contains one row for each primer used. The columns of this file are required to be:
 
 - `primer`: the unique primer name
-- `barcode`: the barcode sequence
-- `barcode_rc`: the reverse complement of the barcode.
+- `primer_seq`: the primer sequence
+- `primer_rc`: the reverse complement of the primer sequence.
 
 ```{r}
-barcodes_filename <- here("ref/barcodes.tsv")
+primers_filename <- here("ref/primers.tsv")
 suppressMessages(
-  barcodes_df <- read_tsv(barcodes_filename, col_names=c("primer", "barcode", "barcode_rc"))
+  primers_df <- read_tsv(primers_filename, col_names=c("primer", "primer_seq", "primer_rc"))
 )
-paged_table(barcodes_df)
+paged_table(primers_df)
 ```
 
 
 
-### Barcode combinations
+### Primer combinations
 
 Lastly, we need the group that each primer combination corresponds to. This data is read in from `ref/metadata.tsv` and contains one row for each primer combination. The columns of this file are required to be:
 
@@ -307,7 +313,7 @@ dir_tree(import_data_dir)
 
 # Demux
 
-Demuxing is the step that separates barcode combinations within the sample files into separate files.
+Demuxing is the step that separates primer combinations within the sample files into separate files.
 
 ```{r}
 # Setup targets for demux step
@@ -335,7 +341,7 @@ write_targets(targets, file=demux_targets)
 demux <- loadWorkflow(targets=demux_targets, wf_file="qiime_demux.cwl", 
     input_file="qiime_demux.yml", dir_path=cwl_path)
 demux <- set_logs_dir(demux, logs_dir)
-demux <- renderWF(demux, inputvars=c(FileName="_INPUT_PATH_", metadata_path="_BARCODES_FILE_",
+demux <- renderWF(demux, inputvars=c(FileName="_INPUT_PATH_", metadata_path="_PRIMERS_FILE_",
                                      demux_output="_OUTPUT_SEQUENCES_", discard_output="_OUTPUT_UNTRIMMED_",
                                      log_output="_LOG_PATH_"))
 run_jobs(demux)
@@ -456,8 +462,8 @@ adapter_seq <- list()
 for (p in amplicon_groups) {
   primers_f <- metadata_df %>% filter(group == p) %>% pull(`forward-primer`)
   primers_r <- metadata_df %>% filter(group == p) %>% pull(`reverse-primer`)
-  adapter_f <- barcodes_df %>% filter(primer %in% primers_f) %>% pull(barcode_rc)
-  adapter_r <- barcodes_df %>% filter(primer %in% primers_r) %>% pull(barcode_rc)
+  adapter_f <- primers_df %>% filter(primer %in% primers_f) %>% pull(primer_rc)
+  adapter_r <- primers_df %>% filter(primer %in% primers_r) %>% pull(primer_rc)
   adapter_seq[[p]][["f"]] <- adapter_f
   adapter_seq[[p]][["r"]] <- adapter_r
 }
@@ -523,6 +529,80 @@ dir_tree(trimmed_dir)
 :::
 
 ::::
+
+-----
+
+# Trimming stats
+
+The code to extract the trimming stats from cutadapt's log files is a bit ad hoc and will likely break if cutadapt changes it's verbose output. If this breaks, skip or comment out the code in this section, since nothing downstream depends on it.
+
+You can also view the log files in more detail in:  
+**`r trimmed_dir`**.
+
+```{r}
+extract_cutadapt_stats <- function(summary_text) {
+  summary <- list()
+  i <- grep("Total read pairs processed", summary_text)
+  stopifnot(length(i) == 1)
+  summary[["input_read_pairs"]] <- str_remove_all(str_extract(summary_text[i], "[\\d,]+$"), ",")
+  i <- grep("Read 1 with adapter:", summary_text)
+  stopifnot(length(i) == 1)
+  summary[["r1_detect_adapter"]] <- str_remove_all(str_match(summary_text[i], "([\\d,]+) \\([\\d.%]+\\)$")[,2], ",")
+  i <- grep("Read 2 with adapter:", summary_text)
+  stopifnot(length(i) == 1)
+  summary[["r2_detect_adapter"]] <- str_remove_all(str_match(summary_text[i], "([\\d,]+) \\([\\d.%]+\\)$")[,2], ",")
+  i <- grep("Pairs that were too short:", summary_text)
+  stopifnot(length(i) == 1)
+  summary[["filtered_pairs"]] <- str_remove_all(str_match(summary_text[i], "([\\d,]+) \\([\\d.%]+\\)$")[,2], ",")
+  i <- grep("Pairs written \\(passing filters\\):", summary_text)
+  stopifnot(length(i) == 1)
+  summary[["passed_pairs"]] <- str_remove_all(str_match(summary_text[i], "([\\d,]+) \\([\\d.%]+\\)$")[,2], ",")
+  i <- grep("Total basepairs processed:", summary_text)
+  stopifnot(length(i) == 1)
+  summary[["total_input_bp"]] <- str_remove_all(str_match(summary_text[i], "([\\d,]+) bp$")[,2], ",")
+  i <- grep("Total written \\(filtered\\):", summary_text)
+  stopifnot(length(i) == 1)
+  summary[["total_output_bp"]] <- str_remove_all(str_match(summary_text[i], "([\\d,]+) bp \\([\\d.%]+\\)$")[,2], ",")
+  return(sapply(summary, as.numeric))
+}
+```
+
+
+```{r}
+indiv_trim_stats <- list()
+for (i in seq_len(nrow(targets))) {
+  log_file_txt <- readLines(targets$log_path[i])
+  sample_name <- targets$SampleName[i]
+  # Each individual primer combination has its own stats
+  summary_indicies <- which(log_file_txt == "=== Summary ===")
+  if (length(summary_indicies) == 0) {
+    indiv_trim_stats[[sample_name]] <- matrix(0, nrow=7)
+    rownames(indiv_trim_stats[[sample_name]]) <- 
+      c("input_read_pairs", "r1_detect_adapter", "r2_detect_adapter", 
+        "filtered_pairs", "passed_pairs", "total_input_bp", "total_output_bp")
+  } else {
+    indiv_trim_stats[[sample_name]] <- sapply(summary_indicies, function(j) {
+      extract_cutadapt_stats(log_file_txt[j:(j+16)])})
+  }
+}
+
+trim_stats <- sapply(indiv_trim_stats, rowSums)
+trim_stats_df <- data.frame(t(trim_stats)) %>% rownames_to_column("sample_id")
+paged_table(trim_stats_df)
+```
+
+The columns in the above table refer to:
+
+- `sample-id`: the sample name and amplicon group
+- `input_read_pairs`: the number of read pairs that were processed
+- `r1_detect_adapter`: the number of forward reads detected to contain the adapter
+- `r2_detect_adapter`: the number of reverse reads detected to contain the adapter
+- `filtered_pairs`: the number of reads removed after trimming due to being too short
+- `passed_pairs`: the number of reads that passed after trimming
+- `total_bp`: the number of base pairs that 
+- `total_input_bp`: the number of base pairs that were processed
+- `total_output_bp`: the number of base pairs that passed after trimming
+
 
 -----
 
@@ -674,7 +754,7 @@ summary_df %>%
 
 ### Quality plots
 
-Output boxplots to visualise read quality scores.
+Output plots to visualise read quality scores.
 
 ```{r}
 wrangle_seven_number_summary <- function(df) {
@@ -721,34 +801,58 @@ names(reverse_list) <- str_remove(basename(reverse_files),
 forward_dat <- lapply(forward_list, wrangle_seven_number_summary)
 reverse_dat <- lapply(reverse_list, wrangle_seven_number_summary)
 
+# Get amplicon group for each file
+group <- forward_files %>% 
+  basename() %>% 
+  str_remove("_forward-seven-number-summaries.tsv$") %>% 
+  str_split("_") %>% 
+  sapply(function(x) x[length(x)])
 ```
 
-Boxplots are a bit dense, so don't plot every sequence base for the read length.
+Plot median quality score for each sample across sequence bases:
 
 ```{r}
-# Use every nth base for a boxplot
-n <- 2
-forward_dat <- lapply(forward_dat, function(df) {df %>% filter(sequence_base %% n == 0)})
-reverse_dat <- lapply(reverse_dat, function(df) {df %>% filter(sequence_base %% n == 0)})
-```
-
-Output boxplots:
-
-```{r, attr.output='style="max-height: 400px; overflow: auto !important;"', layout="l-body-outset", fig.height=5, fig.width=16}
-# Print all amplicon groups (some left and long groups are noise)
-plot_order <- summary_df %>% arrange(group, library) %>% pull(library) %>% unique
-plot_order <- plot_order[plot_order %in% names(forward_dat)]
-for (sample_name in plot_order) {
-  if (! str_detect(sample_name, "short|right")) next
-  # print(sample_name)
-  g_forward <- sequence_quality_plot(forward_dat[[sample_name]],
-                                     title=paste0(sample_name, " - Forward Reads"))
-  g_reverse <- sequence_quality_plot(reverse_dat[[sample_name]],
-                                     title=paste0(sample_name, " - Reverse Reads"))
-  print(g_forward + g_reverse)
+# Max count
+max_count <- 10000
+for (amplicon_group in amplicon_groups) {
+  file_indices <- which(group == amplicon_group)
+  group_sample_names <- names(forward_dat[file_indices])
+  forward_df <- do.call(rbind, lapply(group_sample_names, function(x) {
+    forward_dat[[x]] %>% select(sequence_base, count, `50%`) %>% mutate(sample_id=x)
+    }))
+  reverse_df <- do.call(rbind, lapply(group_sample_names, function(x) {
+    reverse_dat[[x]] %>% select(sequence_base, count, `50%`) %>% mutate(sample_id=x)
+    }))
+  g_forward <- ggplot(forward_df, 
+                      aes(x=sequence_base, y=`50%`, color=sample_id, alpha=count/max_count)) +
+    geom_line() +
+    scale_y_continuous(limits=c(0, 40)) +
+    scale_alpha_continuous(limits=c(0, 1)) + 
+    theme_bw() +
+    labs(title=sprintf("Forward reads - Amplicon group: %s", amplicon_group),
+         x="Sequence Base",
+         y="Median Quality Score") +
+    theme(plot.title = element_text(size=12))
+  g_reverse <- ggplot(reverse_df, 
+                      aes(x=sequence_base, y=`50%`, color=sample_id, alpha=count/max_count)) +
+    geom_line() +
+    scale_y_continuous(limits=c(0, 40)) +
+    scale_alpha_continuous(limits=c(0, 1)) + 
+    theme_bw() +
+    labs(title=sprintf("Reverse reads - Amplicon group: %s", amplicon_group),
+         x="Sequence Base",
+         y="Median Quality Score") +
+    theme(plot.title = element_text(size=12))
+  print(g_forward)
+  print(g_reverse)
 }
 ```
 
+If you want to view an individual sample's sequence base quality boxplot, you can view the sample's qzv file located in:
+**`r summary_dir`**  
+using [QIIME 2 View](https://view.qiime2.org/), or run the `sequencing_quality_boxplots.Rmd` notebook to view all sample boxplots.
+
+-----
 
 # Save output
 
@@ -770,5 +874,4 @@ if (nzchar(system.file(package="devtools"))) {
   sessionInfo()
 }
 ```
-
 
