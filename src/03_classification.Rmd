@@ -246,6 +246,7 @@ write_targets(targets %>% filter(amplicon_group %in% c("short", "right")), file=
 
 #### Run output {.panel-name}
 
+Note: This step can take a long time to run
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 prelim_classification <- loadWorkflow(targets=prelim_classification_targets,
