@@ -11,6 +11,7 @@ output: html_document
  
 3.    Format a sample.tsv file using the script below. This will be required to run the 01_preprocessing.
 ```{r}
+
 # list files in the folder containing raw data files
 file_names <- list.files("~/git/metabarcoding_workflow/data/raw")
 
@@ -19,7 +20,7 @@ sample_list <- data.frame(all_files= file_names)
 
 # split columns for R1 and R2 files
 samples <- sample_list %>%
-  mutate(
+  dplyr::mutate(
     filename_r1  = ifelse(grepl("R2", all_files), all_files, NA),
     filename_r2 = ifelse(grepl("R1", all_files), all_files, NA)
   )
@@ -44,7 +45,7 @@ samples$sample_name <- substr(samples$filename_r1, 1, regexpr("_", samples$filen
 samples$factor <- substr(samples$sample_name, 1, nchar(samples$sample_name))
 # remove replicate data
 samples <- samples %>%
-  mutate(factor = sub("(rep1|rep2|rep3|rep4|rep5|rep6)$", "", factor))
+   dplyr::mutate(factor = sub("(rep1|rep2|rep3|rep4|rep5|rep6)$", "", factor))
 
 # Add "./data/raw/" to the beginning of the "File_Name" column
 samples$filename_r1 <- paste0("./data/raw/",samples$filename_r1)

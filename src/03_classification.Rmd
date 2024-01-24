@@ -246,7 +246,18 @@ write_targets(targets %>% filter(amplicon_group %in% c("short", "right")), file=
 
 #### Run output {.panel-name}
 
-Note: This step can take a long time to run
+Note: This step can take a long time to run. Not working for large datasets
+
+
+```{r}
+# change slurm setting for large datasets
+use_slurm <- TRUE
+slurm_threads <- 2
+slurm_resources <- list(partition="main", ntasks=1, ncpus=slurm_threads, memory=16384)
+slurm_n_jobs <- 2
+```
+
+
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 prelim_classification <- loadWorkflow(targets=prelim_classification_targets,
