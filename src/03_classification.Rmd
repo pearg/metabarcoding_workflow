@@ -224,7 +224,7 @@ stopifnot(all(! is.na(targets)))
 
 # This can be changed if you want different parameters
 targets$min_consensus <- 0.51
-targets$p_identity <- 0.8
+targets$p_identity <- 0.85
 
 targets <- targets %>% 
   mutate(classification_output=
@@ -360,8 +360,8 @@ for (amplicon_group in amplicon_groups) {
 ```{r}
 threshold_file_list <- data.frame(
   amplicon_group=c("short", "right"),
-  file_list=c(here("results/classification/thresholds/ncbi_short_files.txt"),
-              here("results/classification/thresholds/ncbi_short_files.txt"))
+  file_list=c(here("results/classification/thresholds/short_files.txt"),
+              here("results/classification/thresholds/right_files.txt"))
 )
 paged_table(threshold_file_list)
 ```
@@ -410,6 +410,8 @@ write_targets(targets %>% filter(amplicon_group %in% c("short", "right")), file=
 ::: {.panel}
 
 #### Run output {.panel-name}
+
+Note: takes 5hr 15min to run 6 samples
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 classification <- loadWorkflow(targets=classification_targets,
@@ -496,6 +498,7 @@ knitr::knit_exit()
 # =-=-=-=-=-=-=-=-=-=
 
 # WIP
+
 
 
 ```{r}
