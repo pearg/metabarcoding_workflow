@@ -777,7 +777,7 @@ sequence_quality_plot <- function(dat, title) {
     labs(title=title,
          x="Sequence Base",
          y="Quality Score") +
-    theme(plot.title = element_text(size=12))
+    theme(plot.title = element_text(size=6))
 }
 ```
 
@@ -832,7 +832,7 @@ for (amplicon_group in amplicon_groups) {
     labs(title=sprintf("Forward reads - Amplicon group: %s", amplicon_group),
          x="Sequence Base",
          y="Median Quality Score") +
-    theme(plot.title = element_text(size=12))
+    theme(plot.title = element_text(size=6))
   g_reverse <- ggplot(reverse_df, 
                       aes(x=sequence_base, y=`50%`, color=sample_id, alpha=count/max_count)) +
     geom_line() +
@@ -842,7 +842,7 @@ for (amplicon_group in amplicon_groups) {
     labs(title=sprintf("Reverse reads - Amplicon group: %s", amplicon_group),
          x="Sequence Base",
          y="Median Quality Score") +
-    theme(plot.title = element_text(size=12))
+    theme(plot.title = element_text(size=6))
   print(g_forward)
   print(g_reverse)
 }
