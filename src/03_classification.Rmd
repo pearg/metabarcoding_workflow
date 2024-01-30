@@ -78,8 +78,8 @@ tmp_dir_path <- "/mnt/galaxy/tmp"
 
 ```{r}
 use_slurm <- TRUE
-slurm_threads <- 8
-slurm_resources <- list(partition="main", ntasks=1, ncpus=slurm_threads, memory=4096)
+slurm_threads <- 4
+slurm_resources <- list(partition="main", ntasks=1, ncpus=slurm_threads, memory=8192)
 slurm_n_jobs <- 10
 ```
 
@@ -201,13 +201,17 @@ dir_tree(classification_db_dir)
 
 Run vsearch on sequences to get the % identity top hit for each ASV. We do this because the step after uses the top % identity to determine the threshold of other matches that should be considered when classifying the ASV.
 
-The newest version of `classify-consensus-vsearch` has an `--o-search-results` option, so we no longer need to run vsearch manually.
+The newest version of `classify-consensus-vsearch` has an `--o-search-results` option, so we no longer need to run vsearch manually. However, due to `classify-consensus-vsearch` using large amounts of memory when assigning consensus taxonomy, setting the `big_dataset` variable to `TRUE` in the code chuck below will run vsearch manually (instead of using the qiime2 plugin) for this preliminary step. This should end up with the same results when you get to the classification step, however, you just won't have a preliminary classification qza file.
 
 
 ```{r}
+big_dataset <- TRUE
+
 classification_prelim_dir <- file.path(results_dir, "classification/preliminary")
 mkdir(classification_prelim_dir)
+```
 
+<<<<<<< HEAD
 # Setup targets
 targets <- data.frame(FileName=extract_targets(dada2, "seq_output"),
                       SampleName=extract_targets(dada2, "SampleName"),
@@ -225,19 +229,76 @@ stopifnot(all(! is.na(targets)))
 # This can be changed if you want different parameters
 targets$min_consensus <- 0.51
 targets$p_identity <- 0.85
+=======
+>>>>>>> 7dce5db224d7c8f05a33bcbbf65e91f6742a5bd6
 
-targets <- targets %>% 
-  mutate(classification_output=
-           file.path(classification_prelim_dir, paste0(amplicon_group, "_prelim_classification.qza")),
-         search_results_output=
-           file.path(classification_prelim_dir, paste0(amplicon_group, "_prelim_search_results.qza"))
+```{r}
+if (! big_dataset) {
+  # Setup targets
+  targets <- data.frame(FileName=extract_targets(dada2, "seq_output"),
+                        SampleName=extract_targets(dada2, "SampleName"),
+                        amplicon_group=extract_targets(dada2, "amplicon_group"))
+  
+  # Join with database paths
+  ref_db <- data.frame(
+    amplicon_group=extract_targets(create_database, "amplicon_group"),
+    sequences_db=extract_targets(create_database, "sequences_output"),
+    taxonomy_db=extract_targets(create_database, "taxonomy_output")
   )
-
-prelim_classification_targets <- here("tmp/classification_prelim_targets.txt")
-
-# WIP: For the moment, only run the short and right amplicions
-write_targets(targets %>% filter(amplicon_group %in% c("short", "right")), file=prelim_classification_targets)
+  targets <- left_join(targets, ref_db, by="amplicon_group")
+  stopifnot(all(! is.na(targets)))
+  
+  # This can be changed if you want different parameters
+  targets$min_consensus <- 0.51
+  targets$p_identity <- 0.8
+  
+  targets <- targets %>% 
+    mutate(classification_output=
+             file.path(classification_prelim_dir, paste0(amplicon_group, "_prelim_classification.qza")),
+           search_results_output=
+             file.path(classification_prelim_dir, paste0(amplicon_group, "_prelim_search_results.qza"))
+    )
+  
+  prelim_classification_targets <- here("tmp/classification_prelim_targets.txt")
+  
+  # WIP: For the moment, only run the short and right amplicions
+  write_targets(targets %>% filter(amplicon_group %in% c("short", "right")), file=prelim_classification_targets)
+}
 ```
+
+
+```{r}
+if (big_dataset) {
+  # vsearch extra parameters
+  # These are the default settings qiime2 uses for feature classifier
+  # https://github.com/qiime2/q2-feature-classifier/blob/master/q2_feature_classifier/_vsearch.py
+  vsearch_extra_parameters <- "--query_cov 0.8 --strand both --maxaccepts 10 --maxrejects 0 --output_no_hits"
+  
+  # This identity threshold should be the lowest identity match to consider an ASV (more stringent thresholding is done in the next step)
+  min_vsearch_identity <- 0.8
+  
+  # Setup targets
+  targets <- data.frame(FileName=extract_targets(dada2, "seq_output"),
+                        SampleName=extract_targets(dada2, "SampleName"),
+                        amplicon_group=extract_targets(dada2, "amplicon_group"))
+  
+  # Join with truncation length parameters and check no missing values
+  targets <- full_join(targets, taxonomy_ref, by="SampleName")
+  # stopifnot(all(! is.na(targets)))
+  
+  targets <- targets %>% 
+    mutate(blast6out_tsv=
+             file.path(classification_prelim_dir, paste0(amplicon_group, "_vsearch.tsv"))
+    )
+  
+  prelim_classification_targets <- here("tmp/classification_prelim_vsearch_targets.txt")
+  
+  # WIP: For the moment, only run the short amplicions
+  write_targets(targets %>% filter(amplicon_group %in% c("short", "right")), file=prelim_classification_targets)
+}
+```
+  
+
 
 
 ::::: {.panelset}
@@ -260,25 +321,51 @@ slurm_n_jobs <- 2
 
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
-prelim_classification <- loadWorkflow(targets=prelim_classification_targets,
-                                           wf_file="qiime_prelim_classification.cwl", 
-                                           input_file="qiime_prelim_classification.yml", dir_path=cwl_path)
+if (! big_dataset) {
+  prelim_classification <- loadWorkflow(targets=prelim_classification_targets,
+                                        wf_file="qiime_prelim_classification.cwl", 
+                                        input_file="qiime_prelim_classification.yml", dir_path=cwl_path)
+  prelim_classification <- set_logs_dir(prelim_classification, logs_dir)
+  prelim_classification@yamlinput$taxonomy_wrapper$path <- 
+    file.path(cwl_path, "qiime_classification_wrapper.sh")
+  prelim_classification@yamlinput$tmp_dir <- tmp_dir_path
+  prelim_classification@yamlinput$n_threads <- slurm_threads
+  prelim_classification@yamlinput$output_dir$path <- classification_prelim_dir
+  prelim_classification <- renderWF(prelim_classification, 
+                                    inputvars=c(FileName="_INPUT_REP_SEQ_",
+                                                sequences_db="_INPUT_SEQ_DB_",
+                                                taxonomy_db="_INPUT_TAXONOMY_DB_",
+                                                amplicon_group="_AMPLICON_GROUP_",
+                                                p_identity="_PERC_IDENTITY_",
+                                                min_consensus="_MIN_CONSENSUS_",
+                                                classification_output="_CLASSIFICATION_OUTPUT_",
+                                                search_results_output="_SEARCH_OUTPUT_"))
+}
+```
+
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+if (big_dataset) {
+  prelim_classification <- loadWorkflow(targets=prelim_classification_targets,
+                                      wf_file="vsearch_prelim.cwl", 
+                                      input_file="vsearch_prelim.yml", dir_path=cwl_path)
 prelim_classification <- set_logs_dir(prelim_classification, logs_dir)
-prelim_classification@yamlinput$taxonomy_wrapper$path <- 
-  file.path(cwl_path, "qiime_classification_wrapper.sh")
-prelim_classification@yamlinput$tmp_dir <- tmp_dir_path
+prelim_classification@yamlinput$vsearch_prelim_wrapper$path <- 
+  file.path(cwl_path, "vsearch_prelim_wrapper.sh")
+prelim_classification@yamlinput$vsearch_params <- vsearch_extra_parameters
+prelim_classification@yamlinput$p_identity <- min_vsearch_identity
 prelim_classification@yamlinput$n_threads <- slurm_threads
 prelim_classification@yamlinput$output_dir$path <- classification_prelim_dir
-prelim_classification <- renderWF(prelim_classification, 
-                                       inputvars=c(FileName="_INPUT_REP_SEQ_",
-                                                   sequences_db="_INPUT_SEQ_DB_",
-                                                   taxonomy_db="_INPUT_TAXONOMY_DB_",
-                                                   amplicon_group="_AMPLICON_GROUP_",
-                                                   p_identity="_PERC_IDENTITY_",
-                                                   min_consensus="_MIN_CONSENSUS_",
-                                                   classification_output="_CLASSIFICATION_OUTPUT_",
-                                                   search_results_output="_SEARCH_OUTPUT_"))
 
+prelim_classification <- renderWF(prelim_classification, 
+                        inputvars=c(FileName="_INPUT_REP_SEQ_",
+                                    db_fasta_file="_INPUT_FASTA_DB_",
+                                    amplicon_group="_AMPLICON_GROUP_",
+                                    blast6out_tsv="_OUTPUT_TSV_"))
+}
+```
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 run_jobs(prelim_classification)
 ```
 
@@ -322,9 +409,13 @@ mkdir(classification_thresholds_dir)
 ```
 
 ```{r}
-get_thresholds <- function(qza_path, offset=3, max_threshold=80) {
-  results <- read_qza(qza_path)
-  thresholds <- results$data %>% 
+get_thresholds <- function(file_path, offset=3, max_threshold=80) {
+  if (str_detect(file_path, ".qza$")) {
+    results <- read_qza(file_path)$data
+  } else {
+    results <- read.table(file_path)
+  }
+  thresholds <- results %>% 
     group_by(V1) %>% 
     summarise(max_p_identity=max(V3)) %>%
     mutate(threshold=max_p_identity - offset) %>%
@@ -359,7 +450,11 @@ for (amplicon_group in amplicon_groups) {
     next
   }
   print(amplicon_group)
-  prelim_search_filename <- sprintf("%s/%s_prelim_search_results.qza", classification_prelim_dir, amplicon_group)
+  if (! big_dataset) {
+    prelim_search_filename <- sprintf("%s/%s_prelim_search_results.qza", classification_prelim_dir, amplicon_group)
+  } else {
+    prelim_search_filename <- sprintf("%s/%s_vsearch.tsv", classification_prelim_dir, amplicon_group)
+  }
   thresholds_list[[amplicon_group]] <- get_thresholds(prelim_search_filename)
   write_id_files_for_thresholds(thresholds_list[[amplicon_group]], 
                                 file_path=classification_thresholds_dir,
@@ -388,7 +483,7 @@ targets <- data.frame(FileName=extract_targets(dada2, "seq_output"),
                       SampleName=extract_targets(dada2, "SampleName"),
                       amplicon_group=extract_targets(dada2, "amplicon_group"))
 
-# Join with NCBI database paths
+# Join with database paths
 ref_db <- data.frame(
   amplicon_group=extract_targets(create_database, "amplicon_group"),
   sequences_db=extract_targets(create_database, "sequences_output"),
@@ -510,46 +605,85 @@ knitr::knit_exit()
 
 # WIP
 
+Starting from here will need the thershold list from Cache03
+```{r}
+#load(here::here("cache/03.RData"))
+#save(thresholds_list, file = here("cache/thresholds_list.RData"))
+#saveRDS(samples_df, file = here("cache/samples_df.rds"))
+# clear Global environment
+load(here::here("cache/thresholds_list.RData"))
+load(here::here("cache/samples_df.rds"))
+```
 
 
 ```{r}
 short_lulu <- readRDS(here("results/lulu/short_lulu.rds"))
+right_lulu <- readRDS(here("results/lulu/right_lulu.rds"))
 short_classifications <- read_qza(here("results/classification/short_classification.qza"))
+right_classifications <- read_qza(here("results/classification/right_classification.qza"))
 short_seq <- read_qza(here("results/dada2/short_representative_sequences.qza"))
+right_seq <- read_qza(here("results/dada2/right_representative_sequences.qza"))
 ```
 
 ```{r}
 short_classifications$data %>% head(100)
 ```
-
 ```{r}
-short_lulu$curated_table
+right_classifications$data %>% head(100)
 ```
 
+```{r}
+# Pull out table of read counts with LULU filter applied
+short_lulu$curated_table
+
+#short_lulu <- data.frame(short_lulu$curated_table)
+#short_class <- data.frame(short_classifications$data)
+```
+```{r}
+# Pull out table of read counts with LULU filter applied
+right_lulu$curated_table
+
+#right_lulu <- data.frame(right_lulu$curated_table)
+#right_class <- data.frame(right_classifications$data)
+```
 
 ```{r}
+# merge short_classifications with tHersholds
 short_df <- merge(short_classifications$data, thresholds_list[["short"]], by.x="Feature.ID", by.y="feature-id")
+
+right_df <- merge(right_classifications$data, thresholds_list[["right"]], by.x="Feature.ID", by.y="feature-id")
 ```
 
 ```{r}
 short_seq$data %>% head
 ```
 
+```{r}
+right_seq$data %>% head
+```
 
 ```{r}
 short_df %>% arrange(desc(max_p_identity)) %>% head(100)
+```
+```{r}
+right_df %>% arrange(desc(max_p_identity)) %>% head(100)
 ```
 
 ```{r}
 table(short_df$Taxon == "Unassigned")
 ```
 
+```{r}
+table(right_df$Taxon == "Unassigned")
+```
 
 ```{r}
 short_df %>% filter(Taxon == "Unassigned") %>% pull(max_p_identity) %>% table
 ```
 
-
+```{r}
+right_df %>% filter(Taxon == "Unassigned") %>% pull(max_p_identity) %>% table
+```
 
 
 ```{r}
@@ -559,7 +693,13 @@ short_search_results <- read_qza(here("results/classification/preliminary/short_
 ```{r}
 short_search_results$data %>% dim
 ```
+```{r}
+right_search_results <- read_qza(here("results/classification/preliminary/right_prelim_search_results.qza"))
+```
 
+```{r}
+right_search_results$data %>% dim
+```
 
 ```{r}
 # ncbi_cois <- read.table(db_coi_ids[["short"]], sep="\t")
@@ -606,6 +746,19 @@ if (all(! colnames(all_tables[[1]]) %in% names(sample_groups))) {
 }
 ```
 
+Combining read tables for the short and right amplicons
+```{r}
+#make them dataframes
+short_read_tab <- all_tables$short
+
+right_read_tab <- all_tables$right
+
+#merge short and right reads tables into one dataframe
+all_read_table <-  rbind(short_read_tab, right_read_tab)
+
+all_read_table %>% dim
+
+```
 
 
 ```{r}
