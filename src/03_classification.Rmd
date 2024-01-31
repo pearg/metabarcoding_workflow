@@ -699,6 +699,7 @@ right_search_results <- read_qza(here("results/classification/preliminary/right_
 
 ```{r}
 right_search_results$data %>% dim
+
 ```
 
 ```{r}
@@ -746,17 +747,79 @@ if (all(! colnames(all_tables[[1]]) %in% names(sample_groups))) {
 }
 ```
 
-Combining read tables for the short and right amplicons
+#Combining read tables for the short and right amplicons
 ```{r}
 #make them dataframes
 short_read_tab <- all_tables$short
-
 right_read_tab <- all_tables$right
 
 #merge short and right reads tables into one dataframe
-all_read_table <-  rbind(short_read_tab, right_read_tab)
+all_read_df <-  rbind(short_read_tab, right_read_tab)
 
-all_read_table %>% dim
+all_read_df %>% dim
+
+# covert row headers to column and then name column 1
+all_read_df <- rownames_to_column(all_read_df, var = "asv_code")
+```
+
+#Combining read classification tables for the short and right amplicons
+```{r}
+# bind short and right classificarion data
+all_classif_df <-  rbind(short_df, right_df)
+
+# rename column 1
+colnames(all_classif_df)[1] <- "asv_code"
+
+# join into a singe dataframe
+
+# all_readclass_df <- merge(all_classif_df, all_read_df = "asv_code", all.x = TRUE)
+
+all_readclass_df <- left_join(all_classif_df, all_read_df, by = "asv_code")
+
+```
+# add in ASV sequence data
+```{r}
+# put sequences in a dataframe
+short_asvseq <- data.frame(short_seq$data)
+right_asvseq <- data.frame(right_seq$data)
+
+# covert row headers to column and then name column 1
+short_asvseq <- rownames_to_column(short_asvseq, var = "asv_code")
+right_asvseq <- rownames_to_column(right_asvseq, var = "asv_code")
+
+# add amplicon information
+short_asvseq  <- mutate(short_asvseq, amplicon = "short")
+right_asvseq <- mutate(right_asvseq, amplicon = "right")
+
+# align column names for merging
+short_asvseq <- short_asvseq %>% rename(asv_seq = short_seq.data)
+right_asvseq <- right_asvseq %>% rename(asv_seq = right_seq.data)
+
+
+# merge data into a single dataframe
+all_asvseq <-  rbind(short_asvseq, right_asvseq)
+```
+
+```{r}
+# merge ALL data into a single dataframe
+final_df <- left_join(all_readclass_df, all_asvseq, by = "asv_code")
+
+# remove columns without data
+final_df <- na.omit(final_df)
+
+final_df$Taxon <- gsub("k__", "", final_df$Taxon)
+final_df$Taxon <- gsub("p__", "", final_df$Taxon)
+final_df$Taxon <- gsub("c__", "", final_df$Taxon)
+final_df$Taxon <- gsub("o__", "", final_df$Taxon)
+final_df$Taxon <- gsub("f__", "", final_df$Taxon)
+final_df$Taxon <- gsub("g__", "", final_df$Taxon)
+final_df$Taxon <- gsub("s__", "", final_df$Taxon)
+
+# place taxonomic data in separate columns
+final_df <- separate(final_df, Taxon, into = c("kingdom", "phylum", "class", "order", "family", "genus","species"), sep = ";",  fill = "right")
+
+# save dataframe
+write.csv(final_df, file = "~/git/metabarcoding_workflow/results/final_data_summary.csv", row.names = FALSE)
 
 ```
 
