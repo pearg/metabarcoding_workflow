@@ -211,27 +211,6 @@ classification_prelim_dir <- file.path(results_dir, "classification/preliminary"
 mkdir(classification_prelim_dir)
 ```
 
-<<<<<<< HEAD
-# Setup targets
-targets <- data.frame(FileName=extract_targets(dada2, "seq_output"),
-                      SampleName=extract_targets(dada2, "SampleName"),
-                      amplicon_group=extract_targets(dada2, "amplicon_group"))
-
-# Join with database paths
-ref_db <- data.frame(
-  amplicon_group=extract_targets(create_database, "amplicon_group"),
-  sequences_db=extract_targets(create_database, "sequences_output"),
-  taxonomy_db=extract_targets(create_database, "taxonomy_output")
-)
-targets <- left_join(targets, ref_db, by="amplicon_group")
-stopifnot(all(! is.na(targets)))
-
-# This can be changed if you want different parameters
-targets$min_consensus <- 0.51
-targets$p_identity <- 0.85
-=======
->>>>>>> 7dce5db224d7c8f05a33bcbbf65e91f6742a5bd6
-
 ```{r}
 if (! big_dataset) {
   # Setup targets
@@ -250,7 +229,7 @@ if (! big_dataset) {
   
   # This can be changed if you want different parameters
   targets$min_consensus <- 0.51
-  targets$p_identity <- 0.8
+  targets$p_identity <- 0.85
   
   targets <- targets %>% 
     mutate(classification_output=
@@ -308,17 +287,6 @@ if (big_dataset) {
 #### Run output {.panel-name}
 
 Note: This step can take a long time to run. Not working for large datasets
-
-
-```{r}
-# change slurm setting for large datasets
-use_slurm <- TRUE
-slurm_threads <- 2
-slurm_resources <- list(partition="main", ntasks=1, ncpus=slurm_threads, memory=16384)
-slurm_n_jobs <- 2
-```
-
-
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 if (! big_dataset) {
@@ -605,17 +573,18 @@ knitr::knit_exit()
 
 # WIP
 
-Starting from here will need the thershold list from Cache03
+Starting from here will need the thershold list and the sample_df from Cache03
 ```{r}
 #load(here::here("cache/03.RData"))
 #save(thresholds_list, file = here("cache/thresholds_list.RData"))
 #saveRDS(samples_df, file = here("cache/samples_df.rds"))
+
 # clear Global environment
 load(here::here("cache/thresholds_list.RData"))
 load(here::here("cache/samples_df.rds"))
 ```
 
-
+# load results files from previuos steps
 ```{r}
 short_lulu <- readRDS(here("results/lulu/short_lulu.rds"))
 right_lulu <- readRDS(here("results/lulu/right_lulu.rds"))
@@ -625,12 +594,16 @@ short_seq <- read_qza(here("results/dada2/short_representative_sequences.qza"))
 right_seq <- read_qza(here("results/dada2/right_representative_sequences.qza"))
 ```
 
+# check classification data for short amplicon
 ```{r}
 short_classifications$data %>% head(100)
 ```
+
+# check classification data for right amplicon
 ```{r}
 right_classifications$data %>% head(100)
 ```
+
 
 ```{r}
 # Pull out table of read counts with LULU filter applied
@@ -639,6 +612,8 @@ short_lulu$curated_table
 #short_lulu <- data.frame(short_lulu$curated_table)
 #short_class <- data.frame(short_classifications$data)
 ```
+
+
 ```{r}
 # Pull out table of read counts with LULU filter applied
 right_lulu$curated_table
@@ -665,6 +640,7 @@ right_seq$data %>% head
 ```{r}
 short_df %>% arrange(desc(max_p_identity)) %>% head(100)
 ```
+
 ```{r}
 right_df %>% arrange(desc(max_p_identity)) %>% head(100)
 ```
@@ -688,13 +664,22 @@ right_df %>% filter(Taxon == "Unassigned") %>% pull(max_p_identity) %>% table
 
 ```{r}
 short_search_results <- read_qza(here("results/classification/preliminary/short_prelim_search_results.qza"))
+
+# for big dataset
+short_search_results <- read_tsv(here("results/classification/preliminary/short_vsearch.tsv"))
+
 ```
 
 ```{r}
 short_search_results$data %>% dim
 ```
+
 ```{r}
 right_search_results <- read_qza(here("results/classification/preliminary/right_prelim_search_results.qza"))
+
+# for big dataset
+right_search_results <- read_tsv(here("results/classification/preliminary/right_vsearch.tsv"))
+
 ```
 
 ```{r}
@@ -745,6 +730,7 @@ if (all(! colnames(all_tables[[1]]) %in% names(sample_groups))) {
     return(x)
   })
 }
+
 ```
 
 #Combining read tables for the short and right amplicons
@@ -752,11 +738,40 @@ if (all(! colnames(all_tables[[1]]) %in% names(sample_groups))) {
 #make them dataframes
 short_read_tab <- all_tables$short
 right_read_tab <- all_tables$right
+```
 
+```{r}
+# Do the amplicon datasets contain the same number of samples?
+short_read_tab %>% dim
+right_read_tab %>% dim
+
+# are these samples the same for both amplicons?
+if(identical(names(short_read_tab), names(right_read_tab))) {
+  print("Column names match.")
+} else {
+  print("Column names do not match.")
+}
+```
+
+# if column match skip this step.
+```{r}
+# if they do not match which columns are different?
+names_only_in_short_read_tab <- setdiff(names(short_read_tab), names(right_read_tab))
+print("Column names present only in short_read_tab:")
+print(names_only_in_short_read_tab)
+
+names_only_in_right_read_tab <- setdiff(names(right_read_tab), names(short_read_tab))
+print("Column names present only in right_read_tab:")
+print(names_only_in_right_read_tab)
+
+# align data set by adding blank column for columns not present in one amplicon but not the other (Cont3rep1, Cont1rep2). 
+short_read_tab <- mutate(short_read_tab, Cont3rep1 = c(0))
+right_read_tab <- mutate(right_read_tab, Cont1rep2 = c(0))
+```
+
+```{r}
 #merge short and right reads tables into one dataframe
 all_read_df <-  rbind(short_read_tab, right_read_tab)
-
-all_read_df %>% dim
 
 # covert row headers to column and then name column 1
 all_read_df <- rownames_to_column(all_read_df, var = "asv_code")
@@ -764,7 +779,7 @@ all_read_df <- rownames_to_column(all_read_df, var = "asv_code")
 
 #Combining read classification tables for the short and right amplicons
 ```{r}
-# bind short and right classificarion data
+# bind short and right classification data
 all_classif_df <-  rbind(short_df, right_df)
 
 # rename column 1
@@ -818,12 +833,17 @@ final_df$Taxon <- gsub("s__", "", final_df$Taxon)
 # place taxonomic data in separate columns
 final_df <- separate(final_df, Taxon, into = c("kingdom", "phylum", "class", "order", "family", "genus","species"), sep = ";",  fill = "right")
 
+# final tidy up (remove 'NA' and X from start of sample names)
+final_df[is.na(final_df)] <- ""
+names(final_df) <- sub("X", "", names(final_df))
+head(final_df)
+
 # save dataframe
 write.csv(final_df, file = "~/git/metabarcoding_workflow/results/final_data_summary.csv", row.names = FALSE)
 
 ```
 
-
+# have not explored script beyond this point (Mel)
 ```{r}
 # Filter the feature tables. Expect some false positives due to mis-tagging.
 # If an observation is only seen in one replicate and is very low compared to other samples,
