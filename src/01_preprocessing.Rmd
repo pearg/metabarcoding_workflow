@@ -825,7 +825,7 @@ for (amplicon_group in amplicon_groups) {
     }))
   g_forward <- ggplot(forward_df, 
                       aes(x=sequence_base, y=`50%`, color=sample_id, alpha=count/max_count)) +
-    geom_line() +
+    geom_line(show.legend = FALSE)  +
     scale_y_continuous(limits=c(0, 40)) +
     scale_alpha_continuous(limits=c(0, 1)) + 
     theme_bw() +
@@ -835,7 +835,7 @@ for (amplicon_group in amplicon_groups) {
     theme(plot.title = element_text(size=6))
   g_reverse <- ggplot(reverse_df, 
                       aes(x=sequence_base, y=`50%`, color=sample_id, alpha=count/max_count)) +
-    geom_line() +
+    geom_line(show.legend = FALSE) +
     scale_y_continuous(limits=c(0, 40)) +
     scale_alpha_continuous(limits=c(0, 1)) + 
     theme_bw() +

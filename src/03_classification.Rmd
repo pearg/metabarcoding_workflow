@@ -88,7 +88,7 @@ slurm_n_jobs <- 10
 # Create databases for classification
 
 ```{r}
-ref_db_dir <- "/mnt/galaxy/home/mecarew/Documents/DNA_reference_db_construction/refdb/final_library"
+ref_db_dir <- "/mnt/galaxy/home/mecarew/git/DNA_barcode_reference_database_construction/final_library"
 
 db_coi_ids=list(
   short=file.path(ref_db_dir, "short_db_2023-07.txt"),
@@ -571,7 +571,7 @@ knitr::knit_exit()
 
 # =-=-=-=-=-=-=-=-=-=
 
-# WIP
+# producing final data summary
 
 Starting from here will need the thershold list and the sample_df from Cache03
 ```{r}
@@ -580,8 +580,8 @@ Starting from here will need the thershold list and the sample_df from Cache03
 #saveRDS(samples_df, file = here("cache/samples_df.rds"))
 
 # clear Global environment
-load(here::here("cache/thresholds_list.RData"))
-load(here::here("cache/samples_df.rds"))
+#load(here::here("cache/thresholds_list.RData"))
+#load(here::here("cache/samples_df.rds"))
 ```
 
 # load results files from previuos steps
@@ -663,7 +663,7 @@ right_df %>% filter(Taxon == "Unassigned") %>% pull(max_p_identity) %>% table
 
 
 ```{r}
-short_search_results <- read_qza(here("results/classification/preliminary/short_prelim_search_results.qza"))
+#short_search_results <- read_qza(here("results/classification/preliminary/short_prelim_search_results.qza"))
 
 # for big dataset
 short_search_results <- read_tsv(here("results/classification/preliminary/short_vsearch.tsv"))
@@ -675,7 +675,7 @@ short_search_results$data %>% dim
 ```
 
 ```{r}
-right_search_results <- read_qza(here("results/classification/preliminary/right_prelim_search_results.qza"))
+# right_search_results <- read_qza(here("results/classification/preliminary/right_prelim_search_results.qza"))
 
 # for big dataset
 right_search_results <- read_tsv(here("results/classification/preliminary/right_vsearch.tsv"))
@@ -786,11 +786,7 @@ all_classif_df <-  rbind(short_df, right_df)
 colnames(all_classif_df)[1] <- "asv_code"
 
 # join into a singe dataframe
-
-# all_readclass_df <- merge(all_classif_df, all_read_df = "asv_code", all.x = TRUE)
-
 all_readclass_df <- left_join(all_classif_df, all_read_df, by = "asv_code")
-
 ```
 # add in ASV sequence data
 ```{r}
