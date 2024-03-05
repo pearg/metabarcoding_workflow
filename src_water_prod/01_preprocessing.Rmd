@@ -67,10 +67,10 @@ use_slurm <- FALSE
 # use_slurm <- TRUE
 
 # Settings for slurm (you can ignore these if `use_slurm` is set to FALSE)
-slurm_conffile <- here::here("src/.batchtools.conf.R")
-slurm_template <- here::here("src/batchtools.slurm.tmpl")
-slurm_resources <- list(partition="main", ntasks=1, ncpus=1, memory=4096)
-slurm_n_jobs <- 10
+#slurm_conffile <- here::here("src/.batchtools.conf.R")
+#slurm_template <- here::here("src/batchtools.slurm.tmpl")
+#slurm_resources <- list(partition="main", ntasks=1, ncpus=1, memory=4096)
+#slurm_n_jobs <- 10
 ```
 
 
@@ -80,7 +80,7 @@ We begin by loading the necessary libraries and files.
 
 ```{r message=FALSE, warning=FALSE}
 suppressPackageStartupMessages({
-  library(systemPipeR)
+  library(systemPipeR, lib.loc = "/home/unimelb.edu.au/jessicac/R/x86_64-pc-linux-gnu-library/4.3")
   library(tidyverse)
   library(here)
   library(patchwork)
@@ -98,9 +98,9 @@ And then we'll add QIIME2 to the environment path.
 current_path_env <- Sys.getenv("PATH")
 
 # Also set qiime2 conda environment in batchtools.slurm.tmpl
-Sys.setenv(PATH=paste0("/home/ubuntu/shared_envs/qiime2-2024.2/bin:/home/ubuntu/miniconda3/condabin:",
-                       current_path_env))
-Sys.setenv(PYTHONPATH="/home/ubuntu/shared_envs/qiime2-2024.2/lib/python3.8/site-packages/")
+Sys.setenv(PATH=paste0("/home/unimelb.edu.au/jessicac/shared_envs/qiime2-2024.2/bin:/home/unimelb.edu.au/jessicac/miniconda3/condabin:", current_path_env))
+
+Sys.setenv(PYTHONPATH="/home/unimelb.edu.au/jessicac/shared_envs/qiime2-2024.2/lib/python3.8/site-packages/")
 ```
 
 And define some functions (might move this elsewhere...)
