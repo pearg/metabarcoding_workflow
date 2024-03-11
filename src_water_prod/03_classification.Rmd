@@ -69,6 +69,7 @@ Sys.setenv(PATH=paste0("/home/unimelb.edu.au/jessicac/shared_envs/qiime2-2024.2/
 Sys.setenv(PYTHONPATH="/home/unimelb.edu.au/jessicac/shared_envs/qiime2-2024.2/lib/python3.8/site-packages/")
 ```
 
+##CHECK THIS ON WATER_PROD
 ```{r}
 # For the mozzie server, the root disk can run out of space, so it's safer to set the tmp directory 
 # to a different location
@@ -494,7 +495,7 @@ classification <- loadWorkflow(targets=classification_targets,
 classification <- set_logs_dir(classification, logs_dir)
 classification@yamlinput$taxonomy_wrapper$path <- 
   file.path(cwl_path, "qiime_classification_by_threshold_wrapper.sh")
-classification@yamlinput$tmp_dir <- tmp_dir_path
+# classification@yamlinput$tmp_dir <- tmp_dir_path
 classification@yamlinput$n_threads <- slurm_threads
 classification@yamlinput$output_dir$path <- classification_dir
 classification <- renderWF(classification, 

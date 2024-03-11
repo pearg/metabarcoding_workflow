@@ -193,7 +193,7 @@ if(identical(names(short_read_tab), names(right_read_tab))) {
 }
 ```
 
-# if column match skip this step.
+# if columns match skip this step.
 ```{r}
 # if they do not match which columns are different?
 names_only_in_short_read_tab <- setdiff(names(short_read_tab), names(right_read_tab))
