@@ -44,7 +44,7 @@ options(width=120)
 
 ```{r message=FALSE, warning=FALSE}
 suppressPackageStartupMessages({
-  library(systemPipeR)
+  library(systemPipeR, lib.loc = "/home/unimelb.edu.au/jessicac/R/x86_64-pc-linux-gnu-library/4.3")
   library(tidyverse)
   library(here)
   library(patchwork)
@@ -64,21 +64,20 @@ load(here::here("cache/02.RData"))
 current_path_env <- Sys.getenv("PATH")
 
 # Also set qiime2 conda environment in batchtools.slurm.tmpl
-Sys.setenv(PATH=paste0("/mnt/galaxy/gvl/software/shared_envs/qiime2_2023-07/bin:",
-                       current_path_env))
-Sys.setenv(PYTHONPATH="/mnt/galaxy/gvl/software/shared_envs/qiime2_2023-07/lib/python3.8/site-packages/")
+Sys.setenv(PATH=paste0("/home/unimelb.edu.au/jessicac/shared_envs/qiime2-2024.2/bin:/home/unimelb.edu.au/jessicac/miniconda3/condabin:", current_path_env))
+
+Sys.setenv(PYTHONPATH="/home/unimelb.edu.au/jessicac/shared_envs/qiime2-2024.2/lib/python3.8/site-packages/")
 ```
 
-##CHECK THIS ON WATER_PROD
 ```{r}
 # For the mozzie server, the root disk can run out of space, so it's safer to set the tmp directory 
 # to a different location
-#tmp_dir_path <- "/mnt/galaxy/tmp"
+tmp_dir_path <- "/mnt/galaxy/tmp"
 # tmp_dir_path <- "/tmp"
 ```
 
 ```{r}
-use_slurm <- TRUE
+use_slurm <- FALSE
 slurm_threads <- 4
 slurm_resources <- list(partition="main", ntasks=1, ncpus=slurm_threads, memory=8192)
 slurm_n_jobs <- 10
@@ -89,7 +88,7 @@ slurm_n_jobs <- 10
 # Create databases for classification
 
 ```{r}
-ref_db_dir <- "/mnt/galaxy/home/mecarew/git/DNA_barcode_reference_database_construction/final_library"
+ref_db_dir <- "~/uomShare/wergStaff/MelCarew/DNAbarcode_reference_databases"
 
 db_coi_ids=list(
   short=file.path(ref_db_dir, "short_db_2023-07.txt"),
@@ -287,7 +286,7 @@ if (big_dataset) {
 
 #### Run output {.panel-name}
 
-Note: This step can take a long time to run. Not working for large datasets
+Note: This step can take a long time to run
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 if (! big_dataset) {
@@ -495,7 +494,7 @@ classification <- loadWorkflow(targets=classification_targets,
 classification <- set_logs_dir(classification, logs_dir)
 classification@yamlinput$taxonomy_wrapper$path <- 
   file.path(cwl_path, "qiime_classification_by_threshold_wrapper.sh")
-# classification@yamlinput$tmp_dir <- tmp_dir_path
+classification@yamlinput$tmp_dir <- tmp_dir_path
 classification@yamlinput$n_threads <- slurm_threads
 classification@yamlinput$output_dir$path <- classification_dir
 classification <- renderWF(classification, 

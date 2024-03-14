@@ -1,0 +1,215 @@
+---
+title: "Metabarcoding Rarefaction"
+description: |
+  A QIIME2-based metabarcoding workflow. Part 3.
+author:
+  - name: Your Name Here
+    url: https://example.com/
+    affiliation: Example Organisation
+    affiliation_url: https://example.com/
+    orcid_id: 0000-0000-0000-0000
+  - name: Jessica Chung
+    url: https://github.com/jessicachung
+    affiliation: Melbourne Bioinformatics, PEARG
+date: "`r Sys.Date()`"
+output: 
+  distill::distill_article:
+    toc: true
+    toc_depth: 4
+    df_print: paged
+    code_folding: true
+    highlight: haddock
+    highlight_downlit: false
+    css: "custom.css"
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning=TRUE, message=TRUE, error=TRUE, echo=TRUE, results="hold")
+knitr::opts_knit$set(root.dir = "..")
+options(digits=4)
+options(width=120)
+```
+
+
+< #TODO: Write documentation about the workflow >
+
+
+# Load
+
+```{r message=FALSE, warning=FALSE}
+# Load workspace from the previous notebook
+load(here::here("cache/02.RData"))
+
+suppressPackageStartupMessages({
+  library(systemPipeR)
+  library(tidyverse)
+  library(here)
+  library(patchwork)
+  library(rmarkdown)
+  library(fs)
+  library(qiime2R)
+})
+
+xaringanExtra::use_panelset()
+```
+
+```{r}
+# Append qiime2 path to PATH
+current_path_env <- Sys.getenv("PATH")
+Sys.setenv(PATH=paste0("/mnt/galaxy/gvl/software/shared_envs/qiime2/bin:",
+                       current_path_env))
+```
+
+-----
+
+# Rarefaction (WIP)
+
+
+
+```{r}
+rarefaction_dir <- file.path(results_dir, "rarefaction")
+mkdir(rarefaction_dir)
+
+# Setup targets
+targets <- data.frame(FileName=extract_targets(dada2, "seq_output"),
+                      SampleName=extract_targets(dada2, "SampleName"),
+                      amplicon_group=extract_targets(dada2, "amplicon_group"),
+                      table_qza=extract_targets(dada2, "table_output"))
+```
+
+```{r}
+# Rarefaction parameters
+# Rarefaction is very sample dependent and depends on sequencing depth
+# When you run a new set of parameters, new outputs will be created
+# Re-iterate until you get a set of min-depth to max-depth you're happy with
+
+# One set of parameters for all samples, or use a list?
+
+rarefaction_min_depth <- 2000
+rarefaction_max_depth <- 37000
+rarefaction_p_steps <- 25
+```
+
+
+
+```{r}
+# TODO
+```
+
+
+
+
+```{r}
+# targets <- targets %>% 
+#   mutate(classification_output=
+#            file.path(classification_dir, paste0(amplicon_group, "_classification.qza")),
+#          tabulation_output=
+#            file.path(dada2_dir, paste0(amplicon_group, "_classification.qzv"))
+#   )
+# 
+# classification_targets <- here("tmp/rarefaction_targets.txt")
+# 
+# # WIP: For the moment, only run the short amplicions
+# write_targets(targets %>% head(1), file=classification_targets)
+```
+
+
+::::: {.panelset}
+
+::: {.panel}
+
+#### Run output {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+dada2 <- loadWorkflow(targets=dada2_targets, wf_file="qiime_dada2.cwl", 
+    input_file="qiime_dada2.yml", dir_path=cwl_path)
+dada2 <- set_logs_dir(dada2, logs_dir)
+dada2 <- renderWF(dada2, inputvars=c(FileName="_INPUT_PATH_",
+                                     forward_trunc_length="_FORWARD_TRUNC_",
+                                     reverse_trunc_length="_REVERSE_TRUNC_",
+                                     stats_output="_STATS_PATH_",
+                                     seq_output="_SEQ_PATH_",
+                                     table_output="_TABLE_PATH_"))
+run_jobs(dada2)
+```
+
+
+:::
+
+::: {.panel}
+
+#### Command list {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+# Print commands that were run
+cmdlist(dada2)
+```
+
+:::
+
+::: {.panel}
+
+#### Output directory files {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+# List files in output directory
+dir_tree(dada2_dir)
+```
+
+:::
+
+::::
+
+
+This step is kinda manual with setting min/max depth size... Dunno how best to handle
+
+```
+
+for AMPLICON in short right; do
+    echo ${AMPLICON}
+    qiime diversity alpha-rarefaction \
+        --i-table data/feature_tables/${AMPLICON}_table.qza \
+        --p-min-depth 2000 \
+        --p-max-depth 37000 \
+        --p-steps 25 \
+        --p-metrics 'observed_features' \
+        --o-visualization data/rarefaction/${AMPLICON}_mult_rarefaction_2k_to_37K_by_sample.qzv
+done
+
+for AMPLICON in short right; do
+    echo ${AMPLICON}
+    qiime diversity alpha-rarefaction \
+        --i-table data/feature_tables/${AMPLICON}_table.qza \
+        --p-min-depth 20 \
+        --p-max-depth 10000 \
+        --p-steps 25 \
+        --p-metrics 'observed_features' \
+        --o-visualization data/rarefaction/${AMPLICON}_mult_rarefaction_20_to_10K_by_sample.qzv
+done
+```
+
+-----
+
+# Save output
+
+Save output so it can be loaded in subsequent notebooks.
+
+```{r}
+# save.image(here("cache/03.RData"))
+```
+
+-----
+
+# Session Info
+
+```{r}
+if (nzchar(system.file(package="devtools"))) {
+  devtools::session_info()
+} else {
+  sessionInfo()
+}
+```
+
+
