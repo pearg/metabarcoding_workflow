@@ -1,0 +1,1 @@
+cluster.functions <- makeClusterFunctionsSlurm(template=here::here("src/batchtools.slurm.tmpl"))

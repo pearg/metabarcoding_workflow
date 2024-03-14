@@ -69,11 +69,10 @@ Sys.setenv(PATH=paste0("/mnt/galaxy/gvl/software/shared_envs/qiime2_2023-07/bin:
 Sys.setenv(PYTHONPATH="/mnt/galaxy/gvl/software/shared_envs/qiime2_2023-07/lib/python3.8/site-packages/")
 ```
 
-##CHECK THIS ON WATER_PROD
 ```{r}
 # For the mozzie server, the root disk can run out of space, so it's safer to set the tmp directory 
 # to a different location
-#tmp_dir_path <- "/mnt/galaxy/tmp"
+tmp_dir_path <- "/mnt/galaxy/tmp"
 # tmp_dir_path <- "/tmp"
 ```
 
@@ -495,7 +494,7 @@ classification <- loadWorkflow(targets=classification_targets,
 classification <- set_logs_dir(classification, logs_dir)
 classification@yamlinput$taxonomy_wrapper$path <- 
   file.path(cwl_path, "qiime_classification_by_threshold_wrapper.sh")
-# classification@yamlinput$tmp_dir <- tmp_dir_path
+classification@yamlinput$tmp_dir <- tmp_dir_path
 classification@yamlinput$n_threads <- slurm_threads
 classification@yamlinput$output_dir$path <- classification_dir
 classification <- renderWF(classification, 
