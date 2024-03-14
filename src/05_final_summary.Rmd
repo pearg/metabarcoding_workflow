@@ -123,8 +123,7 @@ right_search_results <- read_tsv(here("results/classification/preliminary/right_
 ```
 
 ```{r}
-right_search_results$data %>% dim
-
+#right_search_results$data %>% dim
 ```
 
 ```{r}
@@ -137,9 +136,9 @@ right_search_results$data %>% dim
 # short_hits <- merge(short_search_results$data, ncbi_cois, by.x="V2", by.y="id", all.x=TRUE)
 ```
 
+## Combine workflow outputs
 
-
-# Filtering ASVs
+# fix sample names
 
 This can be changed with future feedback.  
 
@@ -173,7 +172,7 @@ if (all(! colnames(all_tables[[1]]) %in% names(sample_groups))) {
 
 ```
 
-#Combining read tables for the short and right amplicons
+# combining read tables for the short and right amplicons
 ```{r}
 #make them dataframes
 short_read_tab <- all_tables$short
@@ -193,7 +192,7 @@ if(identical(names(short_read_tab), names(right_read_tab))) {
 }
 ```
 
-# if column match skip this step.
+# if column names match skip this step.
 ```{r}
 # if they do not match which columns are different?
 names_only_in_short_read_tab <- setdiff(names(short_read_tab), names(right_read_tab))
@@ -203,7 +202,10 @@ print(names_only_in_short_read_tab)
 names_only_in_right_read_tab <- setdiff(names(right_read_tab), names(short_read_tab))
 print("Column names present only in right_read_tab:")
 print(names_only_in_right_read_tab)
+```
 
+# write scripts to add a blank column to align data for all amplicons
+```{r}
 # align data set by adding blank column for columns not present in one amplicon but not the other (Cont3rep1, Cont1rep2). 
 short_read_tab <- mutate(short_read_tab, Cont3rep1 = c(0))
 right_read_tab <- mutate(right_read_tab, Cont1rep2 = c(0))
@@ -276,7 +278,7 @@ names(final_df) <- sub("X", "", names(final_df))
 head(final_df)
 
 # save dataframe
-write.csv(final_df, file = "~/git/metabarcoding_workflow/results/final_data_summary.csv", row.names = FALSE)
+write.csv(final_df, file = "~/git/metabarcoding_workflow/results/final_data_summary4_Mar_24.csv", row.names = FALSE)
 
 ```
 

@@ -11,6 +11,7 @@ output: html_document
  
 3.    Format a sample.tsv file using the script below. This will be required to run the 01_preprocessing.
 ```{r}
+library(dplyr)
 
 # list files in the folder containing raw data files
 file_names <- list.files("~/git/metabarcoding_workflow/data/raw")
