@@ -15,7 +15,7 @@ This final section enables data to be arranged into a final table for future ana
 
 Starting from here will need the thershold list and the sample_df from Cache03
 ```{r}
-#load(here::here("cache/03.RData"))
+load(here::here("cache/03.RData"))
 #save(thresholds_list, file = here("cache/thresholds_list.RData"))
 #saveRDS(samples_df, file = here("cache/samples_df.rds"))
 
@@ -111,7 +111,7 @@ short_search_results <- read_tsv(here("results/classification/preliminary/short_
 ```
 
 ```{r}
-short_search_results$data %>% dim
+#short_search_results$data %>% dim
 ```
 
 ```{r}
@@ -159,17 +159,35 @@ all_tables <- list(
 sample_groups <- samples_df$factor
 names(sample_groups) <- samples_df$sample_name
 sample_groups
+
+#sample_ids <- samples_df$sample_name
+#sample_ids
+
 ```
 
 ```{r}
 # Need to rename columns to get rid of the prefix X character if sample names start with a digit
+# Jess original code here...
 if (all(! colnames(all_tables[[1]]) %in% names(sample_groups))) {
+ all_tables <- lapply(all_tables, function(x) {
+  colnames(x) <- str_remove(colnames(x), "^X")
+  return(x)
+ })
+}
+
+colnames(all_tables[[l]])
+
+# changed by Mel sample_groups to sample ID
+if (all(! colnames(all_tables[[1]]) %in% names(sample_id))) {
   all_tables <- lapply(all_tables, function(x) {
     colnames(x) <- str_remove(colnames(x), "^X")
     return(x)
   })
 }
 
+colnames(all_tables[[l]])
+
+print(sample_ids)
 ```
 
 # combining read tables for the short and right amplicons
@@ -278,11 +296,34 @@ names(final_df) <- sub("X", "", names(final_df))
 head(final_df)
 
 # save dataframe
-write.csv(final_df, file = "~/git/metabarcoding_workflow/results/final_data_summary4_Mar_24.csv", row.names = FALSE)
+write.csv(final_df, file = "~/git/metabarcoding_workflow/results/final_raw_data_summary4_Mar_24.csv", row.names = FALSE)
 
 ```
 
+
+
+
 # have not explored script beyond this point (Mel)
+
+```{r}
+site_sample <- lapply(, function(x) {
+  if (grepl("\\d", x)) {
+    return(substr(x, start = 3, stop = nchar(x)))
+  } else {
+    return(x)
+  }
+}
+
+if (all(! colnames(all_tables[[1]]) %in% names(sample_id))) {
+  all_tables <- lapply(all_tables, function(x) {
+    colnames(x) <- str_remove(colnames(x), "^X")
+    return(x)
+  })
+}
+```
+
+
+
 ```{r}
 # Filter the feature tables. Expect some false positives due to mis-tagging.
 # If an observation is only seen in one replicate and is very low compared to other samples,
@@ -313,7 +354,7 @@ for (l in names(all_tables)) {
   matrix_list <- list()
   for (g in unique(sample_groups)) {
     sample_ids <- names(sample_groups)[sample_groups == g]
-    x <- all_tables[[l]][,sample_ids]
+    x <- all_tables[[l]][,sample_id]
     ok1 <- x > 0
     ok2 <- x >= threshold_absolute
     # Keep ASVs if they have observations in at least two samples within a replicate group or have 
@@ -338,6 +379,50 @@ sapply(f1_filtered, dim)
 sapply(f1_filtered, function(x) {x[rowSums(x) > 0,] %>% dim})
 ```
 
+
+
+```{r}
+f1_filtered <- list()
+
+for (l in names(all_tables)) {
+  matrix_list <- list()
+  
+  for (g in unique(sample_groups)) {
+    sample_ids <- names(sample_groups)[sample_groups == g]
+    
+    # Check if sample_ids are present in short
+    if (all(sample_ids %in% colnames(short))) {
+      x <- all_tables[[l]][ , colnames(all_tables[[l]]) %in% sample_ids]
+      
+      ok1 <- x > 0
+      ok2 <- x >= threshold_absolute
+      
+      # Keep ASVs if they have observations in at least two samples within a replicate group or have 
+      # observations > <threshold_absolute> in one sample. Else, set observations to zero for that ASV
+      # for that group
+      ok_asvs <- rowSums(ok1) > 1 | rowSums(ok2) >= 1
+      
+      # Set failed ASVs to zero
+      x[!ok_asvs, ] <- 0
+      matrix_list[[g]] <- x
+    } else {
+      # Print the problematic sample_ids and the columns in short
+      print(paste("Sample IDs not found in short for", l, ":"))
+      print(sample_ids)
+      print("Columns in short:")
+      print(colnames(short))
+      
+      # Handle case where sample_ids are not found in short
+      warning(paste("Sample IDs", paste(sample_ids, collapse = ", "), "not found in short for", l))
+    }
+  }
+  
+  # Combine the matrices in matrix_list by columns
+  names(matrix_list) <- NULL
+  f1_filtered[[l]] <- do.call(cbind, matrix_list)
+}
+
+```
 
 
 ```{r}
