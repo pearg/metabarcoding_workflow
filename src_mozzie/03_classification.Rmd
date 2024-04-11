@@ -254,7 +254,7 @@ if (big_dataset) {
   vsearch_extra_parameters <- "--query_cov 0.8 --strand both --maxaccepts 10 --maxrejects 0 --output_no_hits"
   
   # This identity threshold should be the lowest identity match to consider an ASV (more stringent thresholding is done in the next step)
-  min_vsearch_identity <- 0.8
+  min_vsearch_identity <- 0.80
   
   # Setup targets
   targets <- data.frame(FileName=extract_targets(dada2, "seq_output"),
