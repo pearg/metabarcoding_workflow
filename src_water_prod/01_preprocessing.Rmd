@@ -48,9 +48,15 @@ This notebook runs through some preprocessing steps for metabarcoding analysis. 
 
 The first thing we'll do is set the directory that stores the workflow outputs.
 ```{r}
+
 # You can use the here::here function to define a path relative to the project 
 #  directory or use an absolute path
-results_dir <- here::here("results")
+#results_dir <- here::here("results")
+#(NOTE: 'test' will need to be change to your miseq folder name)
+results_dir <- "/mnt/uomShare/wergStaff/MelCarew/git_data/test/metabarcoding_workflow/results"
+
+# Set the directory path for files to be stored on uomshare (NOTE: 'test' will need to be change to your miseq folder name)
+uomshare <- "/mnt/uomShare/wergStaff/MelCarew/git_data/test/metabarcoding_workflow/"
 
 # Log files will be stored inside the logs directory inside the results directory
 logs_dir <- file.path(results_dir, "logs")
@@ -164,7 +170,7 @@ A file containing sample information is required. We'll read in `data/metadata/s
 - `factor`: a factor of interest for your dataset (if you don't have a factor of interest, you can set the values as the same as the sample name)
 
 ```{r}
-samples_df <- read.table(here("data/metadata/samples.tsv"), header=TRUE, stringsAsFactors=FALSE)
+samples_df <- read.table(paste0(uomshare,"data/metadata/samples.tsv"), header=TRUE, stringsAsFactors=FALSE)
 paged_table(samples_df)
 ```
 
@@ -227,8 +233,10 @@ If all the files exist, we can now create a separate directory for each sample a
 
 ```{r}
 # Create some directories first
-dir_create(results_dir)
-dir_create(logs_dir)
+#dir_create(results_dir)
+dir.create(results_dir)
+#dir_create(logs_dir)
+dir.create(logs_dir)
 dir_create(here("tmp"))
 
 # Create symlinks
