@@ -5,9 +5,9 @@ date: "2024-02-28"
 output: html_document
 ---
 # Preparation for running bioinformatic pipeline
-1.    Clone a copy of the workflow from the PEARG github repository https://github.com/pearg/metabarcoding_workflow into your server directory (for this I have set up a directory called 'git' for cloned repositories). You'll need a github account to do this (see - https://docs.github.com/en/get-started/onboarding/getting-started-with-your-github-account).
+1.    Clone a copy of the workflow from the PEARG github repository https://github.com/pearg/metabarcoding_workflow into your server directory. You'll need a github account to do this (see - https://docs.github.com/en/get-started/onboarding/getting-started-with-your-github-account).
 
-2.    Make a folder with your miseq run name for your data in git folder on the uomshare Then ransfer datafiles from the AGRF server onto into your git folder on the uomshare in a folder called raw. 
+2.    Make a folder with your miseq run name for your data in git folder on the uomshare, then transfer data files from the AGRF server onto into your git folder on the uomshare in a folder called 'raw' (this is the folder name which these raw data files are accessed in the workflow)
  
 3.    Format a sample.tsv file using the script below. This will be required to run the 01_preprocessing.
 ```{r}
@@ -15,7 +15,7 @@ library(dplyr)
 
 # set up metabarcoding workflow folder inside MiSeq run file for input and output data files (NOTE each new project will require the directories to be setup for your dataset, this code has input data in the folder 'test')
 
-metabarcoding_workflow <- "/mnt/uomShare/wergStaff/MelCarew/git_data/test/metabarcoding_workflow/"
+metabarcoding_workflow <- "~/uomShare/wergStaff/MelCarew/git-data/test/metabarcoding_workflow/"
 dir.create(metabarcoding_workflow)
 
 # create data directory for data analysis
@@ -27,7 +27,7 @@ metadata <- paste0(metabarcoding_workflow,"data/metadata")
 dir.create(metadata)
 
 # move raw data into the 'metabarcoding workflow' folder for analysis
-file.rename(from = "/mnt/uomShare/wergStaff/MelCarew/git_data/test/raw", to = paste0(metabarcoding_workflow, "data/raw"))
+file.rename(from = "~/uomShare/wergStaff/MelCarew/git-data/test/raw", to = paste0(metabarcoding_workflow, "data/raw"))
 
 # make the mteadata.tsv file for analysis
 # list files in the folder containing raw data files
@@ -71,6 +71,8 @@ samples$filename_r2 <- paste0(metabarcoding_workflow, "data/raw/",samples$filena
 
 # Write table '.tsv' to analysis directory
 write.table(samples, file = paste0(metabarcoding_workflow, "data/metadata/samples.tsv"), sep = "\t", row.names = FALSE, quote = FALSE)
+
+# Check that your a file called 'samples.tsv' is in your 'data' folder.
 ```
 
 # Some more on using github (if you haven't before)

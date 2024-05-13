@@ -35,6 +35,11 @@ options(width=120)
 
 This notebook performs quantification for your metabarcoding analysis. This notebook depends on the outputs of the previous notebook, `01_preprocessing.Rmd` where we preprocessed the sequencing data. In this notebook, first, we'll create new QIIME artifact files for each amplicon group, so each file contains all samples corresponding to that group. We'll then use DADA2 to denoise sequence data and generate feature tables and feature data. Lastly, we'll run [LULU](https://github.com/tobiasgf/lulu) to perform distribution-based post-clustering curation of the ASV sequences.
 
+```{r}
+#reset directory
+uomshare <- "/mnt/uomShare/wergStaff/MelCarew/git-data/test/metabarcoding_workflow/"
+```
+
 
 # Load
 
@@ -53,7 +58,7 @@ suppressPackageStartupMessages({
 xaringanExtra::use_panelset()
 
 # Load workspace from the previous notebook
-load(here::here("cache/01.RData"))
+load(paste0(uomshare,"cache/01.RData"))
 ```
 
 ```{r}
@@ -379,11 +384,11 @@ dir_tree(dada2_dir)
 # View DADA2 stats
 
 ```{r}
-paged_table(read_qza(here("results/dada2/short_denoising_stats.qza"))$data)
+paged_table(read_qza(paste0(uomshare,"dada2/short_denoising_stats.qza"))$data)
 ```
 
 ```{r}
-paged_table(read_qza(here("results/dada2/right_denoising_stats.qza"))$data)
+paged_table(read_qza(paste0(uomshare, "dada2/right_denoising_stats.qza"))$data)
 ```
 
 
@@ -475,9 +480,9 @@ Run LULU to merge features together.
 ```
 
 ```{r}
-short_table <- read_qza(here("results/dada2/short_table.qza"))
+short_table <- read_qza(paste0(uomshare, "dada2/short_table.qza"))
 short_table_df <- data.frame(short_table$data)
-short_match_list <- read.table(here("results/lulu/short_match_list.txt"))
+short_match_list <- read.table(paste0(uomshare, "lulu/short_match_list.txt"))
 
 # TODO: Currently using default parameters
 z <- capture.output(short_lulu <- lulu(short_table_df, short_match_list))
@@ -487,14 +492,14 @@ dim(short_lulu$curated_table)
 ```
 
 ```{r}
-saveRDS(short_lulu, file=here("results/lulu/short_lulu.rds"))
+saveRDS(short_lulu, file=paste0(uomshare, "lulu/short_lulu.rds"))
 ```
 
 
 ```{r}
-right_table <- read_qza(here("results/dada2/right_table.qza"))
+right_table <- read_qza(file=paste0(uomshare, "dada2/right_table.qza"))
 right_table_df <- data.frame(right_table$data)
-right_match_list <- read.table(here("results/lulu/right_match_list.txt"))
+right_match_list <- read.table(paste0(uomshare, "lulu/right_match_list.txt"))
 
 # TODO: Currently using default parameters
 z <- capture.output(right_lulu <- lulu(right_table_df, right_match_list))
@@ -504,7 +509,7 @@ dim(right_lulu$curated_table)
 ```
 
 ```{r}
-saveRDS(right_lulu, file=here("results/lulu/right_lulu.rds"))
+saveRDS(right_lulu, file=paste0(uomshare, "lulu/right_lulu.rds"))
 ```
 
 
@@ -520,7 +525,7 @@ dir_tree(lulu_dir)
 Save output so it can be loaded in subsequent notebooks.
 
 ```{r}
-save.image(here("cache/02.RData"))
+save.image(paste0(uomshare,"cache/02.RData"))
 ```
 
 
