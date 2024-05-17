@@ -50,7 +50,13 @@ The first thing we'll do is set the directory that stores the workflow outputs.
 ```{r}
 # You can use the here::here function to define a path relative to the project 
 #  directory or use an absolute path
-results_dir <- here::here("results")
+#results_dir <- here::here("results")
+#NOTE: 'test' will need to be change to your miseq folder name
+
+results_dir <- "~/uomShare/wergStaff/MelCarew/git-data/test/metabarcoding_workflow"
+
+# Set the directory path for files to be stored on uomshare (NOTE: 'test' will need to be change to your miseq folder name)
+uomshare <- "/mnt/uomShare/wergStaff/MelCarew/git-data/test/metabarcoding_workflow/"
 
 # Log files will be stored inside the logs directory inside the results directory
 logs_dir <- file.path(results_dir, "logs")
@@ -164,7 +170,7 @@ A file containing sample information is required. We'll read in `data/metadata/s
 - `factor`: a factor of interest for your dataset (if you don't have a factor of interest, you can set the values as the same as the sample name)
 
 ```{r}
-samples_df <- read.table(here("data/metadata/samples.tsv"), header=TRUE, stringsAsFactors=FALSE)
+samples_df <- read.table(paste0(uomshare,"data/metadata/samples.tsv"), header=TRUE, stringsAsFactors=FALSE)
 paged_table(samples_df)
 ```
 
@@ -223,35 +229,46 @@ data.frame(sample_name=samples_df$sample_name,
   paged_table()
 ```
 
-If all the files exist, we can now create a separate directory for each sample and link back to the original FASTQ files using symbolic links (shortcuts).
+If all the files exist, we can now create a separate directory for each sample have changed this -link back to the original FASTQ files using symbolic links (shortcuts). Please note Mel has changed this for uomshare to not use symlinks
 
 ```{r}
 # Create some directories first
-dir_create(results_dir)
-dir_create(logs_dir)
-dir_create(here("tmp"))
+dir.create(results_dir)
+dir.create(logs_dir)
+dir.create(here("tmp"))
 
-# Create symlinks
+# Create import_data directory if it doesn't exist
 import_data_dir <- file.path(results_dir, "import_data")
+if (!dir.exists(import_data_dir)) {
+  dir.create(import_data_dir, recursive = TRUE)
+}
+
 import_targets <- list()
+
 for (i in seq_len(nrow(samples_df))) {
   x <- as.list(samples_df[i,])
   lib_dir <- file.path(import_data_dir, x$sample_name)
   import_targets[[i]] <- lib_dir
-  if (! dir.exists(lib_dir)) {
-    dir.create(lib_dir, recursive=TRUE)
+  
+  if (!dir.exists(lib_dir)) {
+    dir.create(lib_dir, recursive = TRUE)
   }
+  
   stopifnot(str_detect(x$filename_r1, "R1"))
   stopifnot(str_detect(x$filename_r2, "R2"))
-  if (! file.exists(file.path(lib_dir, "forward.fastq.gz"))) {
-    file.symlink(from=file.path(here(x$filename_r1)),
-               to=file.path(lib_dir, "forward.fastq.gz"))
+  
+  # Copy files instead of creating symlinks
+  if (!file.exists(file.path(lib_dir, "forward.fastq.gz"))) {
+    file.copy(from = file.path(here(x$filename_r1)), 
+              to = file.path(lib_dir, "forward.fastq.gz"))
   }
-  if (! file.exists(file.path(lib_dir, "reverse.fastq.gz"))) {
-    file.symlink(from=file.path(here(x$filename_r2)),
-                 to=file.path(lib_dir, "reverse.fastq.gz"))
+  
+  if (!file.exists(file.path(lib_dir, "reverse.fastq.gz"))) {
+    file.copy(from = file.path(here(x$filename_r2)), 
+              to = file.path(lib_dir, "reverse.fastq.gz"))
   }
 }
+
 import_targets <- unlist(import_targets)
 ```
 
@@ -866,8 +883,8 @@ using [QIIME 2 View](https://view.qiime2.org/), or run the `sequencing_quality_b
 Save output so it can be loaded in subsequent notebooks.
 
 ```{r}
-mkdir(here("cache"))
-save.image(here("cache/01.RData"))
+mkdir(paste0(uomshare,"cache"))
+save.image(paste0(uomshare,"cache/01.RData"))
 ```
 
 -----

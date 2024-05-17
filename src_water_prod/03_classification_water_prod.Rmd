@@ -39,6 +39,11 @@ options(digits=4)
 options(width=120)
 ```
 
+```{r}
+#reset directory
+uomshare <- "~/uomShare/wergStaff/MelCarew/git-data/test/metabarcoding_workflow/"
+```
+
 
 # Load
 
@@ -56,7 +61,7 @@ suppressPackageStartupMessages({
 xaringanExtra::use_panelset()
 
 # Load workspace from the previous notebook
-load(here::here("cache/02.RData"))
+load(paste0(uomshare,"cache/02.RData"))
 ```
 
 ```{r}
@@ -72,8 +77,9 @@ Sys.setenv(PYTHONPATH="/home/unimelb.edu.au/jessicac/shared_envs/qiime2-2024.2/l
 ```{r}
 # For the mozzie server, the root disk can run out of space, so it's safer to set the tmp directory 
 # to a different location
-tmp_dir_path <- "/mnt/galaxy/tmp"
-# tmp_dir_path <- "/tmp"
+Sys.setenv(TMPDIR="~/uomShare/wergStaff/MelCarew")
+#tmp_dir_path <- "/mnt/galaxy/tmp"
+tmp_dir_path <- "/home/unimelb.edu.au/mecarew/tmp"
 ```
 
 ```{r}
@@ -91,17 +97,17 @@ slurm_n_jobs <- 10
 ref_db_dir <- "~/uomShare/wergStaff/MelCarew/DNAbarcode_reference_databases"
 
 db_coi_ids=list(
-  short=file.path(ref_db_dir, "short_db_2023-07.txt"),
+  short=file.path(ref_db_dir, "short_db_2024-05.txt"),
   left=file.path(ref_db_dir, "left_db_2023-07.txt"),
-  right=file.path(ref_db_dir, "right_db_2023-07.txt"),
+  right=file.path(ref_db_dir, "right_db_2024-05.txt"),
   long=file.path(ref_db_dir, "long_db_2023-07.txt")
 )
 
 # FASTA file with COI sequences
 db_fasta_files=list(
-  short=file.path(ref_db_dir, "short_db_2023-07.fasta"),
+  short=file.path(ref_db_dir, "short_db_2024-05.fasta"),
   left=file.path(ref_db_dir, "left_db_2023-07.fasta"),
-  right=file.path(ref_db_dir, "right_db_2023-07.fasta"),
+  right=file.path(ref_db_dir, "right_db_2024-05.fasta"),
   long=file.path(ref_db_dir, "long_db_2023-07.fasta")
 )
 ```
@@ -135,7 +141,7 @@ targets <- targets %>%
            file.path(classification_db_dir, paste0(amplicon_group, "_feature_taxonomy.qza"))
 )
 
-database_targets <- here("tmp/database_targets.txt")
+database_targets <- paste0(uomshare,"tmp/database_targets.txt")
 
 # WIP: For the moment, only run the short/right amplicions
 write_targets(targets %>% filter(SampleName %in% c("short", "right")), file=database_targets)
@@ -238,9 +244,9 @@ if (! big_dataset) {
              file.path(classification_prelim_dir, paste0(amplicon_group, "_prelim_search_results.qza"))
     )
   
-  prelim_classification_targets <- here("tmp/classification_prelim_targets.txt")
+  prelim_classification_targets <- paste0(uomshare,"tmp/classification_prelim_targets.txt")
   
-  # WIP: For the moment, only run the short and right amplicions
+  # WIP: For the moment, only run the short and right amplicons
   write_targets(targets %>% filter(amplicon_group %in% c("short", "right")), file=prelim_classification_targets)
 }
 ```
@@ -270,16 +276,13 @@ if (big_dataset) {
              file.path(classification_prelim_dir, paste0(amplicon_group, "_vsearch.tsv"))
     )
   
-  prelim_classification_targets <- here("tmp/classification_prelim_vsearch_targets.txt")
+  prelim_classification_targets <- paste0(uomshare,"tmp/classification_prelim_vsearch_targets.txt")
   
-  # WIP: For the moment, only run the short amplicions
+  # WIP: For the moment, only run the short amplicons
   write_targets(targets %>% filter(amplicon_group %in% c("short", "right")), file=prelim_classification_targets)
 }
 ```
   
-
-
-
 ::::: {.panelset}
 
 ::: {.panel}
@@ -393,6 +396,7 @@ get_thresholds <- function(file_path, offset=3, max_threshold=80) {
 }
 ```
 
+#write thresholds
 ```{r}
 write_id_files_for_thresholds <- function(threshold_df, file_path, file_prefix) {
   unique_thresholds <- sort(unique(threshold_df$threshold))
@@ -434,8 +438,8 @@ for (amplicon_group in amplicon_groups) {
 ```{r}
 threshold_file_list <- data.frame(
   amplicon_group=c("short", "right"),
-  file_list=c(here("results/classification/thresholds/short_files.txt"),
-              here("results/classification/thresholds/right_files.txt"))
+  file_list=c(paste0(uomshare, "classification/thresholds/short_files.txt"),
+             paste0(uomshare, "classification/thresholds/right_files.txt"))
 )
 paged_table(threshold_file_list)
 ```
@@ -472,10 +476,10 @@ targets <- targets %>%
            file.path(classification_dir, paste0(amplicon_group, "_classification.qza"))
   )
 
-classification_targets <- here("tmp/classification_targets.txt")
+classification_targets <- paste0(uomshare,"tmp/classification_targets.txt")
 
-# WIP: For the moment, only run the short and right amplicions
-write_targets(targets %>% filter(amplicon_group %in% c("short", "right")), file=classification_targets)
+# WIP: For the moment, only run the short and right amplicons
+write_targets(targets %>% filter(amplicon_group %in% c("right")), file=classification_targets)
 ```
 
 
@@ -543,7 +547,7 @@ dir_tree(classification_dir)
 Save output so it can be loaded in subsequent notebooks.
 
 ```{r}
-save.image(here("cache/03.RData"))
+save.image(paste0(uomshare,"cache/03.RData"))
 ```
 
 
