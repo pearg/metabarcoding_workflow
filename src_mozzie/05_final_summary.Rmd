@@ -207,8 +207,8 @@ print(names_only_in_right_read_tab)
 # write scripts to add a blank column to align data for all amplicons
 ```{r}
 # align data set by adding blank column for columns not present in one amplicon but not the other (Cont3rep1, Cont1rep2). 
-short_read_tab <- mutate(short_read_tab, Cont3rep1 = c(0))
-right_read_tab <- mutate(right_read_tab, Cont1rep2 = c(0))
+#short_read_tab <- mutate(short_read_tab, COICont10 = c(0))
+right_read_tab <- mutate(right_read_tab, COICont10 = c(0), COICont8 = c(0), M6LGrep1 = c(0), M6LGrep3 = c(0))
 ```
 
 ```{r}
@@ -278,7 +278,7 @@ names(final_df) <- sub("X", "", names(final_df))
 head(final_df)
 
 # save dataframe
-write.csv(final_df, file = "~/git/metabarcoding_workflow/results/final_data_summary4_Mar_24.csv", row.names = FALSE)
+write.csv(final_df, file = "~/git/metabarcoding_workflow/results/PFAS_final_data_summary17_may_24.csv", row.names = FALSE)
 
 ```
 
