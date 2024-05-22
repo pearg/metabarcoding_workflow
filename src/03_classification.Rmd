@@ -72,6 +72,7 @@ Sys.setenv(PYTHONPATH="/mnt/galaxy/gvl/software/shared_envs/qiime2_2023-07/lib/p
 ```{r}
 # For the mozzie server, the root disk can run out of space, so it's safer to set the tmp directory 
 # to a different location
+Sys.setenv(TMPDIR="/mnt/galaxy/tmp")
 tmp_dir_path <- "/mnt/galaxy/tmp"
 # tmp_dir_path <- "/tmp"
 ```
@@ -215,9 +216,9 @@ mkdir(classification_prelim_dir)
 ```{r}
 if (! big_dataset) {
   # Setup targets
-  targets <- data.frame(FileName=extract_targets(dada2, "seq_output"),
-                        SampleName=extract_targets(dada2, "SampleName"),
-                        amplicon_group=extract_targets(dada2, "amplicon_group"))
+  targets <- data.frame(FileName=extract_targets(dada2_filtering, "filtered_seq_output"),
+                        SampleName=extract_targets(dada2_filtering, "SampleName"),
+                        amplicon_group=extract_targets(dada2_filtering, "amplicon_group"))
   
   # Join with database paths
   ref_db <- data.frame(
@@ -258,9 +259,9 @@ if (big_dataset) {
   min_vsearch_identity <- 0.8
   
   # Setup targets
-  targets <- data.frame(FileName=extract_targets(dada2, "seq_output"),
-                        SampleName=extract_targets(dada2, "SampleName"),
-                        amplicon_group=extract_targets(dada2, "amplicon_group"))
+  targets <- data.frame(FileName=extract_targets(dada2_filtering, "filtered_seq_output"),
+                        SampleName=extract_targets(dada2_filtering, "SampleName"),
+                        amplicon_group=extract_targets(dada2_filtering, "amplicon_group"))
   
   # Join with truncation length parameters and check no missing values
   targets <- full_join(targets, taxonomy_ref, by="SampleName")
@@ -447,9 +448,9 @@ Classify ASVs based on the percentage identity threshold from the previous preli
 
 ```{r}
 # Setup targets
-targets <- data.frame(FileName=extract_targets(dada2, "seq_output"),
-                      SampleName=extract_targets(dada2, "SampleName"),
-                      amplicon_group=extract_targets(dada2, "amplicon_group"))
+targets <- data.frame(FileName=extract_targets(dada2_filtering, "filtered_seq_output"),
+                      SampleName=extract_targets(dada2_filtering, "SampleName"),
+                      amplicon_group=extract_targets(dada2_filtering, "amplicon_group"))
 
 # Join with database paths
 ref_db <- data.frame(
@@ -575,7 +576,7 @@ knitr::knit_exit()
 ```{r}
 short_lulu <- readRDS(here("results/lulu/short_lulu.rds"))
 short_classifications <- read_qza(here("results/classification/short_classification.qza"))
-short_seq <- read_qza(here("results/dada2/short_representative_sequences.qza"))
+short_seq <- read_qza(here("results/dada2/short_representative_sequences_filtered.qza"))
 ```
 
 ```{r}
