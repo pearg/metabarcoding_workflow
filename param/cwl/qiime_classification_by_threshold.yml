@@ -24,7 +24,7 @@ n_threads: _N_THREADS_
 
 file_list: _FILE_LIST_
 
-tmp_dir: _TMP_DIR_
+# tmp_dir: _TMP_DIR_
 
 output_file:
   class: File

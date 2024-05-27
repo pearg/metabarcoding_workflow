@@ -73,8 +73,6 @@ Sys.setenv(PYTHONPATH="/mnt/galaxy/gvl/software/shared_envs/qiime2_2023-07/lib/p
 # For the mozzie server, the root disk can run out of space, so it's safer to set the tmp directory 
 # to a different location
 Sys.setenv(TMPDIR="/mnt/galaxy/tmp")
-tmp_dir_path <- "/mnt/galaxy/tmp"
-# tmp_dir_path <- "/tmp"
 ```
 
 ```{r}
@@ -89,7 +87,7 @@ slurm_n_jobs <- 10
 # Create databases for classification
 
 ```{r}
-ref_db_dir <- "/mnt/galaxy/home/mecarew/Documents/DNA_reference_db_construction/refdb/final_library"
+ref_db_dir <- "/mnt/galaxy/home/mecarew/Documents/DNA_reference_db_construction_final_libraries/final_library"
 
 db_coi_ids=list(
   short=file.path(ref_db_dir, "short_db_2023-07.txt"),
@@ -297,7 +295,6 @@ if (! big_dataset) {
   prelim_classification <- set_logs_dir(prelim_classification, logs_dir)
   prelim_classification@yamlinput$taxonomy_wrapper$path <- 
     file.path(cwl_path, "qiime_classification_wrapper.sh")
-  prelim_classification@yamlinput$tmp_dir <- tmp_dir_path
   prelim_classification@yamlinput$n_threads <- slurm_threads
   prelim_classification@yamlinput$output_dir$path <- classification_prelim_dir
   prelim_classification <- renderWF(prelim_classification, 
@@ -435,8 +432,8 @@ for (amplicon_group in amplicon_groups) {
 ```{r}
 threshold_file_list <- data.frame(
   amplicon_group=c("short", "right"),
-  file_list=c(here("results/classification/thresholds/short_files.txt"),
-              here("results/classification/thresholds/right_files.txt"))
+  file_list=c(file.path(classification_thresholds_dir, "short_files.txt"),
+              file.path(classification_thresholds_dir, "right_files.txt"))
 )
 paged_table(threshold_file_list)
 ```
@@ -493,7 +490,6 @@ classification <- loadWorkflow(targets=classification_targets,
 classification <- set_logs_dir(classification, logs_dir)
 classification@yamlinput$taxonomy_wrapper$path <- 
   file.path(cwl_path, "qiime_classification_by_threshold_wrapper.sh")
-classification@yamlinput$tmp_dir <- tmp_dir_path
 classification@yamlinput$n_threads <- slurm_threads
 classification@yamlinput$output_dir$path <- classification_dir
 classification <- renderWF(classification, 
@@ -574,9 +570,9 @@ knitr::knit_exit()
 
 
 ```{r}
-short_lulu <- readRDS(here("results/lulu/short_lulu.rds"))
-short_classifications <- read_qza(here("results/classification/short_classification.qza"))
-short_seq <- read_qza(here("results/dada2/short_representative_sequences_filtered.qza"))
+short_lulu <- readRDS(file.path(lulu_dir, "short_lulu.rds"))
+short_classifications <- read_qza(file.path(classification_dir, "short_classification.qza"))
+short_seq <- read_qza(file.path(dada2_dir, "short_representative_sequences_filtered.qza"))
 ```
 
 ```{r}
@@ -614,11 +610,16 @@ short_df %>% filter(Taxon == "Unassigned") %>% pull(max_p_identity) %>% table
 
 
 ```{r}
-short_search_results <- read_qza(here("results/classification/preliminary/short_prelim_search_results.qza"))
+if (! big_dataset) {
+  short_search_results <- read_qza(file.path(classification_prelim_dir, "short_prelim_search_results.qza"))
+  short_search_results <- short_search_results$data
+} else {
+  short_search_results <- read.table(file.path(classification_prelim_dir, "short_vsearch.tsv"))
+}
 ```
 
 ```{r}
-short_search_results$data %>% dim
+short_search_results %>% dim
 ```
 
 
@@ -629,7 +630,7 @@ short_search_results$data %>% dim
 
 
 ```{r}
-# short_hits <- merge(short_search_results$data, ncbi_cois, by.x="V2", by.y="id", all.x=TRUE)
+# short_hits <- merge(short_search_results, ncbi_cois, by.x="V2", by.y="id", all.x=TRUE)
 ```
 
 

@@ -6,11 +6,11 @@
 # 6: n threads
 # 7: output path for classification qza
 # 8: output path for search results qza
-# 9: path to tmp dir
+# # 9: path to tmp dir
 
-tmpDir=$(mktemp -d -p ${9})
-
-export TMPDIR=${tmpDir}
+# tmpDir=$(mktemp -d -p ${9})
+# 
+# export TMPDIR=${tmpDir}
 
 qiime feature-classifier classify-consensus-vsearch \
     --i-query ${1} \
@@ -21,6 +21,7 @@ qiime feature-classifier classify-consensus-vsearch \
     --p-threads ${6} \
     --o-classification ${7} \
     --o-search-results ${8} \
+    --no-recycle \
     --verbose
 
 

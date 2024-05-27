@@ -419,6 +419,7 @@ write_targets(targets, file=dada2_filtered_targets)
 
 # The minimum relative abundance for a feature to be retained
 p_abundance <- "0.00001"
+# p_abundance <- "0.001" # Lower threshold for testing purposes
 
 # The minimum portion of samples that a feature must have a relative abundance of at least 
 # `abundance` to be retained
@@ -485,8 +486,8 @@ dir_tree(dada2_dir)
 Check dimensions of the table data pre and post-filtering.
 
 ```{r}
-before_filtering <- read_qza(here("results/dada2/short_table.qza"))
-after_filtering <- read_qza(here("results/dada2/short_table_filtered.qza"))
+before_filtering <- read_qza(file.path(dada2_dir, "short_table.qza"))
+after_filtering <- read_qza(file.path(dada2_dir, "short_table_filtered.qza"))
 ```
 
 ```{r}
@@ -586,9 +587,9 @@ Run LULU to merge features together.
 ```
 
 ```{r}
-short_table <- read_qza(here("results/dada2/short_table.qza"))
+short_table <- read_qza(file.path(dada2_dir, "short_table_filtered.qza"))
 short_table_df <- data.frame(short_table$data)
-short_match_list <- read.table(here("results/lulu/short_match_list.txt"))
+short_match_list <- read.table(file.path(lulu_dir, "short_match_list.txt"))
 
 # TODO: Currently using default parameters
 z <- capture.output(short_lulu <- lulu(short_table_df, short_match_list))
@@ -598,14 +599,14 @@ dim(short_lulu$curated_table)
 ```
 
 ```{r}
-saveRDS(short_lulu, file=here("results/lulu/short_lulu.rds"))
+saveRDS(short_lulu, file=file.path(lulu_dir, "short_lulu.rds"))
 ```
 
 
 ```{r}
-right_table <- read_qza(here("results/dada2/right_table.qza"))
+right_table <- read_qza(file.path(dada2_dir, "right_table_filtered.qza"))
 right_table_df <- data.frame(right_table$data)
-right_match_list <- read.table(here("results/lulu/right_match_list.txt"))
+right_match_list <- read.table(file.path(lulu_dir, "right_match_list.txt"))
 
 # TODO: Currently using default parameters
 z <- capture.output(right_lulu <- lulu(right_table_df, right_match_list))
@@ -615,7 +616,7 @@ dim(right_lulu$curated_table)
 ```
 
 ```{r}
-saveRDS(right_lulu, file=here("results/lulu/right_lulu.rds"))
+saveRDS(right_lulu, file=file.path(lulu_dir, "right_lulu.rds"))
 ```
 
 
