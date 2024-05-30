@@ -1,0 +1,31 @@
+dada2_filtering_wrapper:
+  class: File
+  path: _WRAPPER_PATH_
+
+input_representative_sequences:
+  class: File
+  path: _SEQ_INPUT_
+
+input_table:
+  class: File
+  path: _TABLE_INPUT_
+
+output_dir:
+  class: Directory
+  path: _OUTPUT_DIR_
+
+p_abundance: _P_ABUNDANCE_
+
+p_prevalence: _P_PREVALENCE_
+
+table_output_file:
+  class: File
+  path: _TABLE_OUTPUT_
+  
+seq_output_file:
+  class: File
+  path: _SEQ_OUTPUT_
+
+results_path:
+  class: Directory
+  path: ../results
