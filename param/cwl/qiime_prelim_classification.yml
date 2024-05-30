@@ -30,7 +30,7 @@ classification_output: _CLASSIFICATION_OUTPUT_
 
 search_results_output: _SEARCH_OUTPUT_
 
-tmp_dir: _TMP_DIR_
+# tmp_dir: _TMP_DIR_
                                                    
 output_file:
   class: File

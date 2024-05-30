@@ -54,11 +54,11 @@ inputs:
     type: string
     inputBinding:
       position: 8
-  tmp_dir:
-    label: "Path to tmp directory"
-    type: string
-    inputBinding:
-      position: 9
+#  tmp_dir:
+#    label: "Path to tmp directory"
+#    type: string
+#    inputBinding:
+#      position: 9
 
 outputs:
   output:
