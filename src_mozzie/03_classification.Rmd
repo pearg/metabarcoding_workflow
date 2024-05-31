@@ -72,7 +72,9 @@ Sys.setenv(PYTHONPATH="/mnt/galaxy/gvl/software/shared_envs/qiime2_2023-07/lib/p
 ```{r}
 # For the mozzie server, the root disk can run out of space, so it's safer to set the tmp directory 
 # to a different location
+Sys.setenv(TMPDIR="/mnt/galaxy/home/mecarew/tmp")
 tmp_dir_path <- "/mnt/galaxy/tmp"
+#tmp_dir_path <- "/mnt/galaxy/home/mecarew/tmp"
 # tmp_dir_path <- "/tmp"
 ```
 
@@ -82,38 +84,55 @@ slurm_threads <- 4
 slurm_resources <- list(partition="main", ntasks=1, ncpus=slurm_threads, memory=8192)
 slurm_n_jobs <- 10
 ```
+#if running from water-prod
+```{r}
+# You can use the here::here function to define a path relative to the project 
+#  directory or use an absolute path
+results_dir <- here::here("results")
 
+# Log files will be stored inside the logs directory inside the results directory
+logs_dir <- file.path(results_dir, "logs")
+
+# set cwl path
+cwl_path <- here("param/cwl")
+
+# re-set combined, dada2 path
+combined_dir <- file.path(results_dir, "combined")
+dada2_dir <- file.path(results_dir, "dada2")
+demux_dir <- file.path(results_dir, "demux")
+import_data_dir <- file.path(results_dir, "import_data")
+lib_dir <- file.path(results_dir, "lib")
+lulu_dir <- file.path(results_dir, "lulu")
+
+```
 -----
 
 # Create databases for classification
 
 ```{r}
-ref_db_dir <- "/mnt/galaxy/home/mecarew/git/DNA_barcode_reference_database_construction/final_library"
+ref_db_dir <- "/mnt/galaxy/home/mecarew/Documents/DNA_reference_db_construction_final_libraries/final_library"
 
 db_coi_ids=list(
-  short=file.path(ref_db_dir, "short_db_2023-07.txt"),
+  short=file.path(ref_db_dir, "short_db_2024-05.txt"),
   left=file.path(ref_db_dir, "left_db_2023-07.txt"),
-  right=file.path(ref_db_dir, "right_db_2023-07.txt"),
+  right=file.path(ref_db_dir, "right_db_2024-05.txt"),
   long=file.path(ref_db_dir, "long_db_2023-07.txt")
 )
 
 # FASTA file with COI sequences
 db_fasta_files=list(
-  short=file.path(ref_db_dir, "short_db_2023-07.fasta"),
+  short=file.path(ref_db_dir, "short_db_2024-05.fasta"),
   left=file.path(ref_db_dir, "left_db_2023-07.fasta"),
-  right=file.path(ref_db_dir, "right_db_2023-07.fasta"),
+  right=file.path(ref_db_dir, "right_db_2024-05.fasta"),
   long=file.path(ref_db_dir, "long_db_2023-07.fasta")
 )
 ```
-
-
 
 ```{r}
 taxonomy_ref <- data.frame(SampleName=names(db_fasta_files),
                            db_coi_id_file=unlist(db_coi_ids[names(db_fasta_files)]),
                            db_fasta_file=unlist(db_fasta_files[names(db_fasta_files)]))
 ```
-
 
 ```{r}
 classification_dir <- file.path(results_dir, "classification")
@@ -494,7 +513,7 @@ classification <- loadWorkflow(targets=classification_targets,
 classification <- set_logs_dir(classification, logs_dir)
 classification@yamlinput$taxonomy_wrapper$path <- 
   file.path(cwl_path, "qiime_classification_by_threshold_wrapper.sh")
-# classification@yamlinput$tmp_dir <- tmp_dir_path
+classification@yamlinput$tmp_dir <- tmp_dir_path
 classification@yamlinput$n_threads <- slurm_threads
 classification@yamlinput$output_dir$path <- classification_dir
 classification <- renderWF(classification, 

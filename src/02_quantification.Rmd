@@ -33,7 +33,7 @@ options(width=120)
 ```
 
 
-This notebook performs quantification for your metabarcoding analysis. This notebook depends on the outputs of the previous notebook, `01_preprocessing.Rmd` where we preprocessed the sequencing data. In this notebook, first, we'll create new QIIME artifact files for each amplicon group, so each file contains all samples corresponding to that group. We'll then use DADA2 to denoise sequence data and generate feature tables and feature data. Lastly, we'll run [LULU](https://github.com/tobiasgf/lulu) to perform distribution-based post-clustering curation of the ASV sequences.
+This notebook performs quantification for your metabarcoding analysis. This notebook depends on the outputs of the previous notebook, `01_preprocessing.Rmd` where we preprocessed the sequencing data. In this notebook, first, we'll create new QIIME artifact files for each amplicon group, so each file contains all samples corresponding to that group. We'll then use DADA2 to denoise sequence data and generate feature tables and feature data, and perform filtering to remove ASVs with very low prevalence. Lastly, we'll run [LULU](https://github.com/tobiasgf/lulu) to perform distribution-based post-clustering curation of the ASV sequences.
 
 
 # Load
@@ -61,7 +61,13 @@ load(here::here("cache/01.RData"))
 current_path_env <- Sys.getenv("PATH")
 Sys.setenv(PATH=paste0("/mnt/galaxy/gvl/software/shared_envs/qiime2/bin:",
                        current_path_env))
-Sys.setenv(PYTHONNOUSERSITE="/mnt/galaxy/gvl/software/shared_envs/qiime2/lib/python*/site-packages/")
+Sys.setenv(PYTHONPATH="/mnt/galaxy/gvl/software/shared_envs/qiime2_2023-07/lib/python3.8/site-packages/")
+```
+
+```{r}
+# For the mozzie server, the root disk can run out of space, so it's safer to set the tmp directory 
+# to a different location
+Sys.setenv(TMPDIR="/mnt/galaxy/tmp")
 ```
 
 ```{r}
@@ -384,6 +390,114 @@ paged_table(read_qza(here("results/dada2/short_denoising_stats.qza"))$data)
 paged_table(read_qza(here("results/dada2/right_denoising_stats.qza"))$data)
 ```
 
+-----
+
+# DADA2 filtering
+
+Remove low frequency ASVs from DADA2 tables. First filter table with `filter-features-conditionally`, then filter matching sequences with `filter-seqs`.
+
+```{r}
+# Setup targets
+targets <- data.frame(FileName=extract_targets(dada2, "table_output"),
+                      SampleName=extract_targets(dada2, "SampleName"),
+                      amplicon_group=extract_targets(dada2, "amplicon_group"),
+                      table_input=extract_targets(dada2, "table_output"),
+                      seq_input=extract_targets(dada2, "seq_output"))
+
+targets <- targets %>% 
+  mutate(filtered_table_output=file.path(dada2_dir, paste0(amplicon_group, "_table_filtered.qza")),
+         filtered_seq_output=file.path(dada2_dir, paste0(amplicon_group, "_representative_sequences_filtered.qza"))
+  )
+
+dada2_filtered_targets <- here("tmp/dada2_filtered_targets.txt")
+write_targets(targets, file=dada2_filtered_targets)
+```
+
+```{r}
+# Set p_abundance and p_prevalence for qiime feature-table filter-features-conditionally.
+# (keep these parameters as strings so they don't get converted to scientific notation further down)
+
+# The minimum relative abundance for a feature to be retained
+p_abundance <- "0.00001"
+# p_abundance <- "0.001" # Lower threshold for testing purposes
+
+# The minimum portion of samples that a feature must have a relative abundance of at least 
+# `abundance` to be retained
+p_prevalence <- "0.01"
+```
+
+
+
+::::: {.panelset}
+
+::: {.panel}
+
+#### Run output {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+dada2_filtering <- loadWorkflow(targets=dada2_filtered_targets, wf_file="qiime_dada2_filtering.cwl", 
+                                input_file="qiime_dada2_filtering.yml", dir_path=cwl_path)
+dada2_filtering <- set_logs_dir(dada2_filtering, logs_dir)
+dada2_filtering@yamlinput$dada2_filtering_wrapper$path <- 
+  file.path(cwl_path, "qiime_dada2_filtering_wrapper.sh")
+dada2_filtering@yamlinput$p_abundance <- p_abundance
+dada2_filtering@yamlinput$p_prevalence <- p_prevalence
+dada2_filtering@yamlinput$output_dir$path <- dada2_dir
+
+dada2_filtering <- renderWF(dada2_filtering, inputvars=c(FileName="_TABLE_INPUT_",
+                                                         seq_input="_SEQ_INPUT_",
+                                                         filtered_table_output="_TABLE_OUTPUT_",
+                                                         filtered_seq_output="_SEQ_OUTPUT_"))
+run_jobs(dada2_filtering)
+```
+
+
+:::
+
+::: {.panel}
+
+#### Command list {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+# Print commands that were run
+cmdlist(dada2_filtering)
+```
+
+:::
+
+::: {.panel}
+
+#### Output directory files {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+# List files in output directory
+dir_tree(dada2_dir)
+```
+
+:::
+
+::::
+
+
+-----
+
+# Check filtering
+
+Check dimensions of the table data pre and post-filtering.
+
+```{r}
+before_filtering <- read_qza(file.path(dada2_dir, "short_table.qza"))
+after_filtering <- read_qza(file.path(dada2_dir, "short_table_filtered.qza"))
+```
+
+```{r}
+print("Pre-filtering:")
+dim(before_filtering$data)
+
+print("Post-filtering:")
+dim(after_filtering$data)
+```
+
 
 -----
 
@@ -399,9 +513,9 @@ lulu_dir <- file.path(results_dir, "lulu")
 mkdir(lulu_dir)
 
 # Setup targets
-targets <- data.frame(FileName=extract_targets(dada2, "seq_output"),
-                      SampleName=extract_targets(dada2, "SampleName"),
-                      amplicon_group=extract_targets(dada2, "amplicon_group"))
+targets <- data.frame(FileName=extract_targets(dada2_filtering, "filtered_seq_output"),
+                      SampleName=extract_targets(dada2_filtering, "SampleName"),
+                      amplicon_group=extract_targets(dada2_filtering, "amplicon_group"))
 
 targets <- targets %>% 
   mutate(match_list_path=
@@ -473,9 +587,9 @@ Run LULU to merge features together.
 ```
 
 ```{r}
-short_table <- read_qza(here("results/dada2/short_table.qza"))
+short_table <- read_qza(file.path(dada2_dir, "short_table_filtered.qza"))
 short_table_df <- data.frame(short_table$data)
-short_match_list <- read.table(here("results/lulu/short_match_list.txt"))
+short_match_list <- read.table(file.path(lulu_dir, "short_match_list.txt"))
 
 # TODO: Currently using default parameters
 z <- capture.output(short_lulu <- lulu(short_table_df, short_match_list))
@@ -485,14 +599,14 @@ dim(short_lulu$curated_table)
 ```
 
 ```{r}
-saveRDS(short_lulu, file=here("results/lulu/short_lulu.rds"))
+saveRDS(short_lulu, file=file.path(lulu_dir, "short_lulu.rds"))
 ```
 
 
 ```{r}
-right_table <- read_qza(here("results/dada2/right_table.qza"))
+right_table <- read_qza(file.path(dada2_dir, "right_table_filtered.qza"))
 right_table_df <- data.frame(right_table$data)
-right_match_list <- read.table(here("results/lulu/right_match_list.txt"))
+right_match_list <- read.table(file.path(lulu_dir, "right_match_list.txt"))
 
 # TODO: Currently using default parameters
 z <- capture.output(right_lulu <- lulu(right_table_df, right_match_list))
@@ -502,7 +616,7 @@ dim(right_lulu$curated_table)
 ```
 
 ```{r}
-saveRDS(right_lulu, file=here("results/lulu/right_lulu.rds"))
+saveRDS(right_lulu, file=file.path(lulu_dir, "right_lulu.rds"))
 ```
 
 

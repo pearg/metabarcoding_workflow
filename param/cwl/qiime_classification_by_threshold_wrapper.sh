@@ -5,11 +5,11 @@
 # 5: n threads
 # 6: output path for merged classification qza
 # 7: input path for file list of feature IDs by threshold percent identity
-# 8: path to tmp dir
+# # 8: path to tmp dir
 
-tmpDir=$(mktemp -d -p ${8})
+# tmpDir=$(mktemp -d -p ${8})
 
-export TMPDIR=${tmpDir}
+# export TMPDIR=${tmpDir}
 
 fileList=${7}
 filteredFiles=""
@@ -38,6 +38,7 @@ while read -r line; do
         --p-threads ${5} \
         --o-classification ${filteredClassificationResults} \
         --o-search-results ${filteredSearchResults} \
+        --no-recycle \
         --verbose
 
 done < ${fileList}
@@ -45,7 +46,3 @@ done < ${fileList}
 qiime feature-table merge-taxa \
     --i-data ${filteredFiles} \
     --o-merged-data ${6}
-
-# qiime metadata tabulate \
-#   --m-input-file ${7}/${8}_classification_l${9}.qza \
-#   --o-visualization ${7}/${8}_classification_l${9}.qzv

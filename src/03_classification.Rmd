@@ -73,8 +73,7 @@ Sys.setenv(PYTHONPATH="/mnt/galaxy/gvl/software/shared_envs/qiime2_2023-07/lib/p
 ```{r}
 # For the mozzie server, the root disk can run out of space, so it's safer to set the tmp directory 
 # to a different location
-tmp_dir_path <- "/mnt/galaxy/tmp"
-# tmp_dir_path <- "/tmp"
+Sys.setenv(TMPDIR="/mnt/galaxy/tmp")
 ```
 
 ```{r}
@@ -89,7 +88,9 @@ slurm_n_jobs <- 10
 # Create databases for classification
 
 ```{r}
-ref_db_dir <- "/mnt/galaxy/home/mecarew/git/DNA_barcode_reference_database_construction/final_library"
+
+ref_db_dir <- "/mnt/galaxy/home/mecarew/Documents/DNA_reference_db_construction_final_libraries/final_library"
+
 
 db_coi_ids=list(
   short=file.path(ref_db_dir, "short_db_2023-07.txt"),
@@ -215,9 +216,9 @@ mkdir(classification_prelim_dir)
 ```{r}
 if (! big_dataset) {
   # Setup targets
-  targets <- data.frame(FileName=extract_targets(dada2, "seq_output"),
-                        SampleName=extract_targets(dada2, "SampleName"),
-                        amplicon_group=extract_targets(dada2, "amplicon_group"))
+  targets <- data.frame(FileName=extract_targets(dada2_filtering, "filtered_seq_output"),
+                        SampleName=extract_targets(dada2_filtering, "SampleName"),
+                        amplicon_group=extract_targets(dada2_filtering, "amplicon_group"))
   
   # Join with database paths
   ref_db <- data.frame(
@@ -258,9 +259,9 @@ if (big_dataset) {
   min_vsearch_identity <- 0.8
   
   # Setup targets
-  targets <- data.frame(FileName=extract_targets(dada2, "seq_output"),
-                        SampleName=extract_targets(dada2, "SampleName"),
-                        amplicon_group=extract_targets(dada2, "amplicon_group"))
+  targets <- data.frame(FileName=extract_targets(dada2_filtering, "filtered_seq_output"),
+                        SampleName=extract_targets(dada2_filtering, "SampleName"),
+                        amplicon_group=extract_targets(dada2_filtering, "amplicon_group"))
   
   # Join with truncation length parameters and check no missing values
   targets <- full_join(targets, taxonomy_ref, by="SampleName")
@@ -297,7 +298,6 @@ if (! big_dataset) {
   prelim_classification <- set_logs_dir(prelim_classification, logs_dir)
   prelim_classification@yamlinput$taxonomy_wrapper$path <- 
     file.path(cwl_path, "qiime_classification_wrapper.sh")
-  prelim_classification@yamlinput$tmp_dir <- tmp_dir_path
   prelim_classification@yamlinput$n_threads <- slurm_threads
   prelim_classification@yamlinput$output_dir$path <- classification_prelim_dir
   prelim_classification <- renderWF(prelim_classification, 
@@ -435,8 +435,8 @@ for (amplicon_group in amplicon_groups) {
 ```{r}
 threshold_file_list <- data.frame(
   amplicon_group=c("short", "right"),
-  file_list=c(here("results/classification/thresholds/short_files.txt"),
-              here("results/classification/thresholds/right_files.txt"))
+  file_list=c(file.path(classification_thresholds_dir, "short_files.txt"),
+              file.path(classification_thresholds_dir, "right_files.txt"))
 )
 paged_table(threshold_file_list)
 ```
@@ -448,9 +448,9 @@ Classify ASVs based on the percentage identity threshold from the previous preli
 
 ```{r}
 # Setup targets
-targets <- data.frame(FileName=extract_targets(dada2, "seq_output"),
-                      SampleName=extract_targets(dada2, "SampleName"),
-                      amplicon_group=extract_targets(dada2, "amplicon_group"))
+targets <- data.frame(FileName=extract_targets(dada2_filtering, "filtered_seq_output"),
+                      SampleName=extract_targets(dada2_filtering, "SampleName"),
+                      amplicon_group=extract_targets(dada2_filtering, "amplicon_group"))
 
 # Join with database paths
 ref_db <- data.frame(
@@ -495,7 +495,7 @@ classification <- loadWorkflow(targets=classification_targets,
 classification <- set_logs_dir(classification, logs_dir)
 classification@yamlinput$taxonomy_wrapper$path <- 
   file.path(cwl_path, "qiime_classification_by_threshold_wrapper.sh")
-# classification@yamlinput$tmp_dir <- tmp_dir_path
+classification@yamlinput$tmp_dir <- tmp_dir_path
 classification@yamlinput$n_threads <- slurm_threads
 classification@yamlinput$output_dir$path <- classification_dir
 classification <- renderWF(classification, 
@@ -567,3 +567,233 @@ if (nzchar(system.file(package="devtools"))) {
 knitr::knit_exit()
 ```
 
+# =-=-=-=-=-=-=-=-=-=
+
+# WIP
+
+
+```{r}
+short_lulu <- readRDS(file.path(lulu_dir, "short_lulu.rds"))
+short_classifications <- read_qza(file.path(classification_dir, "short_classification.qza"))
+short_seq <- read_qza(file.path(dada2_dir, "short_representative_sequences_filtered.qza"))
+```
+
+```{r}
+short_classifications$data %>% head(100)
+```
+
+```{r}
+short_lulu$curated_table
+```
+
+
+```{r}
+short_df <- merge(short_classifications$data, thresholds_list[["short"]], by.x="Feature.ID", by.y="feature-id")
+```
+
+```{r}
+short_seq$data %>% head
+```
+
+
+```{r}
+short_df %>% arrange(desc(max_p_identity)) %>% head(100)
+```
+
+```{r}
+table(short_df$Taxon == "Unassigned")
+```
+
+
+```{r}
+short_df %>% filter(Taxon == "Unassigned") %>% pull(max_p_identity) %>% table
+```
+
+
+
+
+```{r}
+if (! big_dataset) {
+  short_search_results <- read_qza(file.path(classification_prelim_dir, "short_prelim_search_results.qza"))
+  short_search_results <- short_search_results$data
+} else {
+  short_search_results <- read.table(file.path(classification_prelim_dir, "short_vsearch.tsv"))
+}
+```
+
+```{r}
+short_search_results %>% dim
+```
+
+
+```{r}
+# ncbi_cois <- read.table(db_coi_ids[["short"]], sep="\t")
+# colnames(ncbi_cois) <- c("id", "taxonomy")
+```
+
+
+```{r}
+# short_hits <- merge(short_search_results, ncbi_cois, by.x="V2", by.y="id", all.x=TRUE)
+```
+
+
+
+# Filtering ASVs
+
+This can be changed with future feedback.  
+
+We could use https://docs.qiime2.org/2023.5/plugins/available/feature-table/filter-features-conditionally/
+if we want simple filtering, but if we want to do something complex, better to do it manually.
+
+
+```{r}
+all_tables <- list(
+  short=short_lulu$curated_table,
+  right=right_lulu$curated_table
+)
+```
+
+
+```{r}
+# Get sample names and groups
+sample_groups <- samples_df$factor
+names(sample_groups) <- samples_df$sample_name
+sample_groups
+```
+
+```{r}
+# Need to rename columns to get rid of the prefix X character if sample names start with a digit
+if (all(! colnames(all_tables[[1]]) %in% names(sample_groups))) {
+  all_tables <- lapply(all_tables, function(x) {
+    colnames(x) <- str_remove(colnames(x), "^X")
+    return(x)
+  })
+}
+```
+
+
+
+```{r}
+# Filter the feature tables. Expect some false positives due to mis-tagging.
+# If an observation is only seen in one replicate and is very low compared to other samples,
+# consider it a false positive and replace the number with a zero
+
+# Filter 1
+# If the number of barcodes for a sample is only seen in one replicate and the number is below
+# <threshold_absolute> observations, then remove it
+threshold_absolute <- 0
+
+# Filter 2
+# Using the samples that have the largest observation of the barcode, take the average number
+# from all its replicates. If the barcode is only seen in one replicate of another sample,
+# if the number of barcodes is less than <threshold_relative_to_max_sample> * max_average, 
+# remove it
+# e.g. For barcode 1, if sample A has 3 replicates with (0, 0, 4) observations, and sample B has 3
+# observations (500, 550, 450). The average of sample B is 500. If <threshold_relative_to_max_sample>
+# is set to 0.01, the threshold is 5. Since sample A's single observation is less than 5, the
+# observation will be removed
+threshold_relative_to_max_sample <- 0.01
+```
+
+Currently applying filter 1, then filter 2 on the results after filter 1. But can be changed to do both filters independently.
+
+```{r}
+f1_filtered <- list()
+for (l in names(all_tables)) {
+  matrix_list <- list()
+  for (g in unique(sample_groups)) {
+    sample_ids <- names(sample_groups)[sample_groups == g]
+    x <- all_tables[[l]][,sample_ids]
+    ok1 <- x > 0
+    ok2 <- x >= threshold_absolute
+    # Keep ASVs if they have observations in at least two samples within a replicate group or have 
+    # observations > <threshold_absolute> in one sample. Else, set observations to zero for that ASV
+    # for that group
+    ok_asvs <- rowSums(ok1) > 1 | rowSums(ok2) >= 1
+    # Check removed ASVs that are non-zero
+    # print(x[! ok_asvs,][rowSums(x[! ok_asvs,]) > 0,])
+    # Set failed ASVs to zero
+    x[! ok_asvs,] <- 0
+    matrix_list[[g]] <- x
+  }
+  names(matrix_list) <- NULL
+  f1_filtered[[l]] <- do.call(cbind, matrix_list)
+}
+
+
+# Check dimensions
+sapply(f1_filtered, dim)
+
+# Check dimensions of non-zero ASVs
+sapply(f1_filtered, function(x) {x[rowSums(x) > 0,] %>% dim})
+```
+
+
+
+```{r}
+f2_filtered <- list()
+for (l in names(all_tables)) {
+  matrix_list <- list()
+  # First get mean observations for each sample group
+  mean_list <- list()
+  for (g in unique(sample_groups)) {
+    sample_ids <- names(sample_groups)[sample_groups == g]
+    x <- f1_filtered[[l]][,sample_ids]
+    mean_list[[g]] <- rowMeans(f1_filtered[[l]][,sample_ids])
+  }
+  
+  # Get the max mean observation for each ASV
+  max_mean_obs <- do.call(cbind, mean_list) %>% apply(1, max)
+  
+  # Get the threshold
+  f2_threshold <- max_mean_obs * threshold_relative_to_max_sample
+  
+  # If there's only a single observation in the sample group and that observation is 
+  # less than <f2_threshold>, set observations to zero for that ASV in the group
+  for (g in unique(sample_groups)) {
+    sample_ids <- names(sample_groups)[sample_groups == g]
+    x <- f1_filtered[[l]][,sample_ids]
+    ok1 <- x > 0
+    ok2 <- x >= f2_threshold
+    ok_asvs <- rowSums(ok1) > 1 | rowSums(ok2) >= 1
+    # Check removed ASVs that are non-zero
+    # print(x[! ok_asvs,][rowSums(x[! ok_asvs,]) > 0,])
+    # Set failed ASVs to zero
+    x[! ok_asvs,] <- 0
+    matrix_list[[g]] <- x
+  }
+  names(matrix_list) <- NULL
+  f2_filtered[[l]] <- do.call(cbind, matrix_list)
+}
+
+# Check dimensions
+sapply(f2_filtered, dim)
+
+# Check dimensions of non-zero ASVs
+sapply(f2_filtered, function(x) {x[rowSums(x) > 0,] %>% dim})
+```
+
+
+
+
+
+
+```{r}
+# Sanity check ASVs that changed
+diff <- lapply(names(all_tables), function(l) {
+  diff <- rowMeans(all_tables[[l]] == f2_filtered[[l]]) != 1
+  names(diff)[diff]
+})
+
+# e.g.
+all_tables[[1]][diff[[1]],]
+f2_filtered[[1]][diff[[1]],]
+```
+
+
+
+# Truncate Taxonomy?
+
+```
+Generally, any DNA barcode sequence match to the above 97% would be considered a species level match. At present, I truncate matches of >96%->95% to genus, <95% to >92% to family
+```

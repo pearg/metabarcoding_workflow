@@ -71,6 +71,8 @@ slurm_n_jobs <- 10
 
 We begin by loading the necessary libraries and files.
 
+Note: if you log out then log back in you may get a error with  'fs' to fix it restart the R session and reload the libraries.
+
 ```{r message=FALSE, warning=FALSE}
 suppressPackageStartupMessages({
   library(systemPipeR)

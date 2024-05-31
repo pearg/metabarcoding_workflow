@@ -96,6 +96,12 @@ Sys.setenv(PATH=paste0("/mnt/galaxy/gvl/software/shared_envs/qiime2_2023-07/bin:
 Sys.setenv(PYTHONPATH="/mnt/galaxy/gvl/software/shared_envs/qiime2_2023-07/lib/python3.8/site-packages/")
 ```
 
+```{r}
+# For the mozzie server, the root disk can run out of space, so it's safer to set the tmp directory 
+# to a different location
+Sys.setenv(TMPDIR="/mnt/galaxy/tmp")
+```
+
 And define some functions (might move this elsewhere...)
 
 ```{r}
