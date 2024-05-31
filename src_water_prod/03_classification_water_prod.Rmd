@@ -41,7 +41,7 @@ options(width=120)
 
 ```{r}
 #reset directory
-uomshare <- "~/uomShare/wergStaff/MelCarew/git-data/test/metabarcoding_workflow/"
+uomshare <- "/home/unimelb.edu.au/uomShare/wergStaff/MelCarew/git-data/miseq17/metabarcoding_workflow/"
 ```
 
 
@@ -77,16 +77,19 @@ Sys.setenv(PYTHONPATH="/home/unimelb.edu.au/jessicac/shared_envs/qiime2-2024.2/l
 ```{r}
 # For the mozzie server, the root disk can run out of space, so it's safer to set the tmp directory 
 # to a different location
-Sys.setenv(TMPDIR="~/uomShare/wergStaff/MelCarew")
+Sys.setenv(TMPDIR="/home/unimelb.edu.au/uomShare/wergStaff/MelCarew")
 #tmp_dir_path <- "/mnt/galaxy/tmp"
 tmp_dir_path <- "/home/unimelb.edu.au/mecarew/tmp"
 ```
 
+###NEW trying to see if I can run a slurm equivalet
 ```{r}
+# Define SLURM settings
 use_slurm <- FALSE
 slurm_threads <- 4
-slurm_resources <- list(partition="main", ntasks=1, ncpus=slurm_threads, memory=8192)
+slurm_resources <- list(partition = "main", ntasks = slurm_threads, ncpus = slurm_threads, memory = 8192)
 slurm_n_jobs <- 10
+
 ```
 
 -----

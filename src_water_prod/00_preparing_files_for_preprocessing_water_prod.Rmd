@@ -15,9 +15,18 @@ library(dplyr)
 
 # set up metabarcoding workflow folder inside MiSeq run file for input and output data files (NOTE each new project will require the directories to be setup for your dataset, this code has input data in the folder 'test')
 
-metabarcoding_workflow <- "~/uomShare/wergStaff/MelCarew/git-data/test/metabarcoding_workflow/"
+metabarcoding_workflow <- "~/uomShare/wergStaff/MelCarew/git-data/miseq18/metabarcoding_workflow/"
+
+
+if (dir.exists(metabarcoding_workflow)) {
+  warning("Directory already exists. Please change the name to the name of your Miseq folder. e.g. ~/uomShare/wergStaff/MelCarew/git-data/miseqXX/metabarcoding_workflow/ This will need to be done for each new miseq dataset at the begining of each notebook")
+}
+
 dir.create(metabarcoding_workflow)
 
+```
+
+```{r}
 # create data directory for data analysis
 data <- paste0(metabarcoding_workflow,"data")
 dir.create(data)
@@ -26,9 +35,9 @@ dir.create(data)
 metadata <- paste0(metabarcoding_workflow,"data/metadata")
 dir.create(metadata)
 
-# move raw data into the 'metabarcoding workflow' folder for analysis
-file.rename(from = "~/uomShare/wergStaff/MelCarew/git-data/test/raw", to = paste0(metabarcoding_workflow, "data/raw"))
-
+# move raw data into the 'metabarcoding workflow' folder for analysis **change directory name to miseq datasewt**
+file.rename(from = "mnt/uomShare/wergStaff/MelCarew/git-data/miseq18/raw", to = paste0(metabarcoding_workflow, "data/raw"))
+  
 # make the mteadata.tsv file for analysis
 # list files in the folder containing raw data files
 file_names <- list.files(paste0(metabarcoding_workflow, "data/raw"))
