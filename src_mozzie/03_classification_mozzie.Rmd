@@ -233,9 +233,9 @@ mkdir(classification_prelim_dir)
 ```{r}
 if (! big_dataset) {
   # Setup targets
-  targets <- data.frame(FileName=extract_targets(dada2, "seq_output"),
-                        SampleName=extract_targets(dada2, "SampleName"),
-                        amplicon_group=extract_targets(dada2, "amplicon_group"))
+  targets <- data.frame(FileName=extract_targets(dada2_filtering, "filtered_seq_output"),
+                        SampleName=extract_targets(dada2_filtering, "SampleName"),
+                        amplicon_group=extract_targets(dada2_filtering, "amplicon_group"))
   
   # Join with database paths
   ref_db <- data.frame(
@@ -273,12 +273,12 @@ if (big_dataset) {
   vsearch_extra_parameters <- "--query_cov 0.8 --strand both --maxaccepts 10 --maxrejects 0 --output_no_hits"
   
   # This identity threshold should be the lowest identity match to consider an ASV (more stringent thresholding is done in the next step)
-  min_vsearch_identity <- 0.80
+  min_vsearch_identity <- 0.8
   
   # Setup targets
-  targets <- data.frame(FileName=extract_targets(dada2, "seq_output"),
-                        SampleName=extract_targets(dada2, "SampleName"),
-                        amplicon_group=extract_targets(dada2, "amplicon_group"))
+  targets <- data.frame(FileName=extract_targets(dada2_filtering, "filtered_seq_output"),
+                        SampleName=extract_targets(dada2_filtering, "SampleName"),
+                        amplicon_group=extract_targets(dada2_filtering, "amplicon_group"))
   
   # Join with truncation length parameters and check no missing values
   targets <- full_join(targets, taxonomy_ref, by="SampleName")
@@ -466,9 +466,9 @@ Classify ASVs based on the percentage identity threshold from the previous preli
 
 ```{r}
 # Setup targets
-targets <- data.frame(FileName=extract_targets(dada2, "seq_output"),
-                      SampleName=extract_targets(dada2, "SampleName"),
-                      amplicon_group=extract_targets(dada2, "amplicon_group"))
+targets <- data.frame(FileName=extract_targets(dada2_filtering, "filtered_seq_output"),
+                      SampleName=extract_targets(dada2_filtering, "SampleName"),
+                      amplicon_group=extract_targets(dada2_filtering, "amplicon_group"))
 
 # Join with database paths
 ref_db <- data.frame(
@@ -496,6 +496,7 @@ classification_targets <- here("tmp/classification_targets.txt")
 # WIP: For the moment, only run the short and right amplicions
 write_targets(targets %>% filter(amplicon_group %in% c("short", "right")), file=classification_targets)
 ```
+
 
 
 ::::: {.panelset}
