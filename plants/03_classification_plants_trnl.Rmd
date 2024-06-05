@@ -1,0 +1,558 @@
+---
+title: "Metabarcoding Classification"
+description: |
+  A QIIME2-based metabarcoding workflow. Part 3.
+author:
+  - name: Your Name Here
+    url: https://example.com/
+    affiliation: Example Organisation
+    affiliation_url: https://example.com/
+    orcid_id: 0000-0000-0000-0000
+  - name: Jessica Chung
+    url: https://github.com/jessicachung
+    affiliation: Melbourne Bioinformatics, PEARG
+date: "`r Sys.Date()`"
+output: 
+  distill::distill_article:
+    toc: true
+    toc_depth: 4
+    df_print: paged
+    code_folding: true
+    highlight: haddock
+    highlight_downlit: false
+    css: "custom.css"
+---
+
+
+This notebook performs classification for your metabarcoding analysis. This notebook depends on the outputs of the previous notebooks, `01_preprocessing.Rmd` where we preprocessed the sequencing data, and `02_quantification` where we quantified ASVs.
+
+
+```{r}
+# TODO: customise slurm n_threads if using slurm or not
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning=TRUE, message=TRUE, error=TRUE, echo=TRUE, results="hold")
+knitr::opts_knit$set(root.dir = "..")
+options(digits=4)
+options(width=120)
+```
+
+
+# Load
+
+```{r message=FALSE, warning=FALSE}
+suppressPackageStartupMessages({
+  library(systemPipeR)
+  library(tidyverse)
+  library(here)
+  library(patchwork)
+  library(rmarkdown)
+  library(fs)
+  library(qiime2R)
+})
+
+xaringanExtra::use_panelset()
+
+# Load workspace from the previous notebook
+load(here::here("plants/cache/02.RData"))
+```
+
+```{r}
+# Append qiime2 path to PATH
+current_path_env <- Sys.getenv("PATH")
+
+# Also set qiime2 conda environment in batchtools.slurm.tmpl
+Sys.setenv(PATH=paste0("/mnt/galaxy/gvl/software/shared_envs/qiime2_2023-07/bin:",
+                       current_path_env))
+Sys.setenv(PYTHONPATH="/mnt/galaxy/gvl/software/shared_envs/qiime2_2023-07/lib/python3.8/site-packages/")
+```
+
+```{r}
+# For the mozzie server, the root disk can run out of space, so it's safer to set the tmp directory 
+# to a different location
+Sys.setenv(TMPDIR="/mnt/galaxy/home/mecarew/tmp")
+tmp_dir_path <- "/mnt/galaxy/tmp"
+#tmp_dir_path <- "/mnt/galaxy/home/mecarew/tmp"
+# tmp_dir_path <- "/tmp"
+```
+
+```{r}
+use_slurm <- TRUE
+slurm_threads <- 4
+slurm_resources <- list(partition="main", ntasks=1, ncpus=slurm_threads, memory=8192)
+slurm_n_jobs <- 10
+```
+-----
+
+# Create databases for classification
+#trnl
+```{r}
+#results_dir <- here::here("plants/results")
+
+ref_db_dir <- "/mnt/galaxy/home/mecarew/git/DNA_barcode_reference_database_construction/Plants/final_library"
+
+db_trnl_ids=list(trnl=file.path(ref_db_dir, "trnl_db_2024-05.txt"))
+
+# FASTA file with trnl sequences
+db_fasta_files=list(
+  trnl=file.path(ref_db_dir, "trnl_db_2024-05.fasta"))
+```
+
+```{r}
+taxonomy_ref <- data.frame(SampleName=names(db_fasta_files),
+                           db_trnl_id_file=unlist(db_trnl_ids[names(db_fasta_files)]),
+                           db_fasta_file=unlist(db_fasta_files[names(db_fasta_files)]))
+```
+
+```{r}
+classification_dir <- file.path(results_dir, "classification")
+mkdir(classification_dir)
+classification_db_dir <- file.path(results_dir, "classification/db")
+mkdir(classification_db_dir)
+
+# Setup targets
+targets <- data.frame(FileName=taxonomy_ref$db_fasta_file,
+                      taxonomy_id_file=taxonomy_ref$db_trnl_id_file,
+                      SampleName=taxonomy_ref$SampleName,
+                      amplicon_group=taxonomy_ref$SampleName,
+                      output_prefix=paste0(taxonomy_ref$SampleName))
+
+targets <- targets %>% 
+  mutate(sequences_output=
+           file.path(classification_db_dir, paste0(amplicon_group, "_feature_sequences.qza")),
+         taxonomy_output=
+           file.path(classification_db_dir, paste0(amplicon_group, "_feature_taxonomy.qza"))
+)
+
+database_targets <- here("tmp/database_targets.txt")
+
+# WIP: For the moment, only run the short/right amplicions
+write_targets(targets %>% filter(SampleName %in% c("trnl")), file=database_targets)
+```
+
+
+::::: {.panelset}
+
+::: {.panel}
+
+#### Run output {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+create_database <- loadWorkflow(targets=database_targets,
+                         wf_file="qiime_database.cwl", 
+                         input_file="qiime_database.yml", dir_path=cwl_path)
+create_database <- set_logs_dir(create_database, logs_dir)
+create_database@yamlinput$database_wrapper$path <- 
+  file.path(cwl_path, "qiime_database_wrapper.sh")
+create_database@yamlinput$output_dir$path <- classification_db_dir
+
+create_database <- renderWF(create_database, 
+                          inputvars=c(FileName="_INPUT_FASTA_",
+                                      taxonomy_id_file="_INPUT_TAXONOMY_",
+                                      output_prefix="_OUTPUT_PREFIX_",
+                                      sequences_output="_OUTPUT_FASTA_DB_"))
+run_jobs(create_database)
+```
+
+
+:::
+
+::: {.panel}
+
+#### Command list {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+# Print commands that were run
+cmdlist(create_database)
+```
+
+:::
+
+::: {.panel}
+
+#### Output directory files {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+# List files in output directory
+dir_tree(classification_db_dir)
+```
+
+:::
+
+::::
+
+-----
+
+# Assign taxonomy
+
+
+## Preliminary search
+
+Run vsearch on sequences to get the % identity top hit for each ASV. We do this because the step after uses the top % identity to determine the threshold of other matches that should be considered when classifying the ASV.
+
+The newest version of `classify-consensus-vsearch` has an `--o-search-results` option, so we no longer need to run vsearch manually. However, due to `classify-consensus-vsearch` using large amounts of memory when assigning consensus taxonomy, setting the `big_dataset` variable to `TRUE` in the code chuck below will run vsearch manually (instead of using the qiime2 plugin) for this preliminary step. This should end up with the same results when you get to the classification step, however, you just won't have a preliminary classification qza file.
+
+
+```{r}
+big_dataset <- TRUE
+
+classification_prelim_dir <- file.path(results_dir, "classification/preliminary")
+mkdir(classification_prelim_dir)
+```
+
+```{r}
+if (! big_dataset) {
+  # Setup targets
+  targets <- data.frame(FileName=extract_targets(dada2, "seq_output"),
+                        SampleName=extract_targets(dada2, "SampleName"),
+                        amplicon_group=extract_targets(dada2, "amplicon_group"))
+  
+  # Join with database paths
+  ref_db <- data.frame(
+    amplicon_group=extract_targets(create_database, "amplicon_group"),
+    sequences_db=extract_targets(create_database, "sequences_output"),
+    taxonomy_db=extract_targets(create_database, "taxonomy_output")
+  )
+  targets <- left_join(targets, ref_db, by="amplicon_group")
+  stopifnot(all(! is.na(targets)))
+  
+  # This can be changed if you want different parameters
+  targets$min_consensus <- 0.51
+  targets$p_identity <- 0.85
+  
+  targets <- targets %>% 
+    mutate(classification_output=
+             file.path(classification_prelim_dir, paste0(amplicon_group, "_prelim_classification.qza")),
+           search_results_output=
+             file.path(classification_prelim_dir, paste0(amplicon_group, "_prelim_search_results.qza"))
+    )
+  
+  prelim_classification_targets <- here("tmp/classification_prelim_targets.txt")
+  
+  # WIP: For the moment, only run the short and right amplicions
+  write_targets(targets %>% filter(amplicon_group %in% c("trnl")), file=prelim_classification_targets)
+}
+```
+
+
+```{r}
+if (big_dataset) {
+  # vsearch extra parameters
+  # These are the default settings qiime2 uses for feature classifier
+  # https://github.com/qiime2/q2-feature-classifier/blob/master/q2_feature_classifier/_vsearch.py
+  vsearch_extra_parameters <- "--query_cov 0.8 --strand both --maxaccepts 10 --maxrejects 0 --output_no_hits"
+  
+  # This identity threshold should be the lowest identity match to consider an ASV (more stringent thresholding is done in the next step)
+  min_vsearch_identity <- 0.80
+  
+  # Setup targets
+  targets <- data.frame(FileName=extract_targets(dada2, "seq_output"),
+                        SampleName=extract_targets(dada2, "SampleName"),
+                        amplicon_group=extract_targets(dada2, "amplicon_group"))
+  
+  # Join with truncation length parameters and check no missing values
+  targets <- full_join(targets, taxonomy_ref, by="SampleName")
+  # stopifnot(all(! is.na(targets)))
+  
+  targets <- targets %>% 
+    mutate(blast6out_tsv=
+             file.path(classification_prelim_dir, paste0(amplicon_group, "_vsearch.tsv"))
+    )
+  
+  prelim_classification_targets <- here("tmp/classification_prelim_vsearch_targets.txt")
+  
+  # WIP: For the moment, only run the short amplicions
+  write_targets(targets %>% filter(amplicon_group %in% c("trnl")), file=prelim_classification_targets)
+}
+```
+  
+
+
+
+::::: {.panelset}
+
+::: {.panel}
+
+#### Run output {.panel-name}
+
+Note: This step can take a long time to run. Not working for large datasets
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+if (! big_dataset) {
+  prelim_classification <- loadWorkflow(targets=prelim_classification_targets,
+                                        wf_file="qiime_prelim_classification.cwl", 
+                                        input_file="qiime_prelim_classification.yml", dir_path=cwl_path)
+  prelim_classification <- set_logs_dir(prelim_classification, logs_dir)
+  prelim_classification@yamlinput$taxonomy_wrapper$path <- 
+    file.path(cwl_path, "qiime_classification_wrapper.sh")
+  prelim_classification@yamlinput$tmp_dir <- tmp_dir_path
+  prelim_classification@yamlinput$n_threads <- slurm_threads
+  prelim_classification@yamlinput$output_dir$path <- classification_prelim_dir
+  prelim_classification <- renderWF(prelim_classification, 
+                                    inputvars=c(FileName="_INPUT_REP_SEQ_",
+                                                sequences_db="_INPUT_SEQ_DB_",
+                                                taxonomy_db="_INPUT_TAXONOMY_DB_",
+                                                amplicon_group="_AMPLICON_GROUP_",
+                                                p_identity="_PERC_IDENTITY_",
+                                                min_consensus="_MIN_CONSENSUS_",
+                                                classification_output="_CLASSIFICATION_OUTPUT_",
+                                                search_results_output="_SEARCH_OUTPUT_"))
+}
+```
+
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+if (big_dataset) {
+  prelim_classification <- loadWorkflow(targets=prelim_classification_targets,
+                                      wf_file="vsearch_prelim.cwl", 
+                                      input_file="vsearch_prelim.yml", dir_path=cwl_path)
+prelim_classification <- set_logs_dir(prelim_classification, logs_dir)
+prelim_classification@yamlinput$vsearch_prelim_wrapper$path <- 
+  file.path(cwl_path, "vsearch_prelim_wrapper.sh")
+prelim_classification@yamlinput$vsearch_params <- vsearch_extra_parameters
+prelim_classification@yamlinput$p_identity <- min_vsearch_identity
+prelim_classification@yamlinput$n_threads <- slurm_threads
+prelim_classification@yamlinput$output_dir$path <- classification_prelim_dir
+
+prelim_classification <- renderWF(prelim_classification, 
+                        inputvars=c(FileName="_INPUT_REP_SEQ_",
+                                    db_fasta_file="_INPUT_FASTA_DB_",
+                                    amplicon_group="_AMPLICON_GROUP_",
+                                    blast6out_tsv="_OUTPUT_TSV_"))
+}
+```
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+run_jobs(prelim_classification)
+```
+
+
+:::
+
+::: {.panel}
+
+#### Command list {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+# Print commands that were run
+cmdlist(prelim_classification)
+```
+
+:::
+
+::: {.panel}
+
+#### Output directory files {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+# List files in output directory
+dir_tree(classification_dir)
+```
+
+:::
+
+::::
+
+
+
+
+## Process preliminary results
+
+Process the search results to get % identity match thresholds. Currently we use the top % identity match minus 3 for the threshold of matches to consider, but this can be changed using the `offset` parameter in the `get_thresholds` function.
+
+```{r}
+classification_thresholds_dir <- file.path(results_dir, "classification/thresholds")
+mkdir(classification_thresholds_dir)
+```
+
+```{r}
+get_thresholds <- function(file_path, offset=3, max_threshold=80) {
+  if (str_detect(file_path, ".qza$")) {
+    results <- read_qza(file_path)$data
+  } else {
+    results <- read.table(file_path)
+  }
+  thresholds <- results %>% 
+    group_by(V1) %>% 
+    summarise(max_p_identity=max(V3)) %>%
+    mutate(threshold=max_p_identity - offset) %>%
+    mutate(threshold=ifelse(threshold < max_threshold, max_threshold, threshold)) %>%
+    rename(`feature-id`=V1)
+  return(thresholds)
+}
+```
+
+```{r}
+write_id_files_for_thresholds <- function(threshold_df, file_path, file_prefix) {
+  unique_thresholds <- sort(unique(threshold_df$threshold))
+  for (t in unique_thresholds) {
+    output_path <- sprintf("%s/%s_%.03f.txt", file_path, file_prefix, t/100)
+    write.table(threshold_df %>% filter(threshold == t) %>% select(`feature-id`), 
+                file=output_path, quote=FALSE, row.names=FALSE)
+  }
+  file_list <- data.frame(filename=sprintf("%s/%s_%.03f.txt", file_path, file_prefix, unique_thresholds/100),
+                          threshold=unique_thresholds/100)
+  write.table(file_list, 
+              file=sprintf("%s/%s_files.txt", file_path, file_prefix), 
+              quote=FALSE, row.names=FALSE, col.names=FALSE, sep="\t")
+}
+```
+
+
+```{r}
+thresholds_list <- list()
+for (amplicon_group in amplicon_groups) {
+  # WIP: only short and right amplicon groups for now
+  if (! amplicon_group %in% c("trnl")) {
+    next
+  }
+  print(amplicon_group)
+  if (! big_dataset) {
+    prelim_search_filename <- sprintf("%s/%s_prelim_search_results.qza", classification_prelim_dir, amplicon_group)
+  } else {
+    prelim_search_filename <- sprintf("%s/%s_vsearch.tsv", classification_prelim_dir, amplicon_group)
+  }
+  thresholds_list[[amplicon_group]] <- get_thresholds(prelim_search_filename)
+  write_id_files_for_thresholds(thresholds_list[[amplicon_group]], 
+                                file_path=classification_thresholds_dir,
+                                file_prefix=amplicon_group)
+}
+```
+
+
+```{r}
+threshold_file_list <- data.frame(
+  amplicon_group=c("trnl"),
+  file_list=c(here("plants/results/classification/thresholds/trnl_files.txt"))
+)
+paged_table(threshold_file_list)
+```
+
+
+## Classification
+
+Classify ASVs based on the percentage identity threshold from the previous preliminary search step.
+
+```{r}
+# Setup targets
+targets <- data.frame(FileName=extract_targets(dada2, "seq_output"),
+                      SampleName=extract_targets(dada2, "SampleName"),
+                      amplicon_group=extract_targets(dada2, "amplicon_group"))
+
+# Join with database paths
+ref_db <- data.frame(
+  amplicon_group=extract_targets(create_database, "amplicon_group"),
+  sequences_db=extract_targets(create_database, "sequences_output"),
+  taxonomy_db=extract_targets(create_database, "taxonomy_output")
+)
+targets <- left_join(targets, ref_db, by="amplicon_group")
+#stopifnot(all(! is.na(targets)))
+
+# Join with ID file lists
+targets <- left_join(targets, threshold_file_list, by="amplicon_group")
+#targets <- targets %>% filter(! is.na(file_list))
+
+# This can be changed if you want different parameters
+targets$min_consensus <- 0.51
+
+targets <- targets %>% 
+  mutate(classification_output=
+           file.path(classification_dir, paste0(amplicon_group, "_classification.qza"))
+  )
+
+classification_targets <- here("tmp/classification_targets.txt")
+
+# WIP: For the moment, only run the short and right amplicions
+write_targets(targets %>% filter(amplicon_group %in% c("trnl")), file=classification_targets)
+```
+
+
+::::: {.panelset}
+
+::: {.panel}
+
+#### Run output {.panel-name}
+
+Note: takes 5hr 15min to run 6 samples
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+classification <- loadWorkflow(targets=classification_targets,
+                                           wf_file="qiime_classification_by_threshold.cwl", 
+                                           input_file="qiime_classification_by_threshold.yml", dir_path=cwl_path)
+classification <- set_logs_dir(classification, logs_dir)
+classification@yamlinput$taxonomy_wrapper$path <- 
+  file.path(cwl_path, "qiime_classification_by_threshold_wrapper.sh")
+classification@yamlinput$tmp_dir <- tmp_dir_path
+classification@yamlinput$n_threads <- slurm_threads
+classification@yamlinput$output_dir$path <- classification_dir
+classification <- renderWF(classification, 
+                           inputvars=c(FileName="_INPUT_REP_SEQ_",
+                                       sequences_db="_INPUT_SEQ_DB_",
+                                       taxonomy_db="_INPUT_TAXONOMY_DB_",
+                                       min_consensus="_MIN_CONSENSUS_",
+                                       classification_output="_CLASSIFICATION_OUTPUT_",
+                                       file_list="_FILE_LIST_"))
+
+run_jobs(classification)
+```
+
+
+:::
+
+::: {.panel}
+
+#### Command list {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+# Print commands that were run
+cmdlist(classification)
+```
+
+:::
+
+::: {.panel}
+
+#### Output directory files {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+# List files in output directory
+dir_tree(classification_dir)
+```
+
+:::
+
+::::
+
+
+-----
+
+# Save output
+
+Save output so it can be loaded in subsequent notebooks.
+
+```{r}
+save.image(here("cache/03.RData"))
+```
+
+
+-----
+
+# Session Info
+
+```{r}
+if (nzchar(system.file(package="devtools"))) {
+  devtools::session_info()
+} else {
+  sessionInfo()
+}
+```
+
+
+
+
+```{r}
+knitr::knit_exit()
+```
+
