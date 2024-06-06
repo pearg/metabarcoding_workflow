@@ -223,10 +223,10 @@ mkdir(classification_prelim_dir)
 ```{r}
 if (! big_dataset) {
   # Setup targets
-  targets <- data.frame(FileName=extract_targets(dada2, "seq_output"),
-                        SampleName=extract_targets(dada2, "SampleName"),
-                        amplicon_group=extract_targets(dada2, "amplicon_group"))
-  
+  targets <- data.frame(FileName=extract_targets(dada2_filtering, "filtered_seq_output"),
+                        SampleName=extract_targets(dada2_filtering, "SampleName"),
+                        amplicon_group=extract_targets(dada2_filtering, "amplicon_group"))
+   
   # Join with database paths
   ref_db <- data.frame(
     amplicon_group=extract_targets(create_database, "amplicon_group"),
@@ -266,9 +266,9 @@ if (big_dataset) {
   min_vsearch_identity <- 0.8
   
   # Setup targets
-  targets <- data.frame(FileName=extract_targets(dada2, "seq_output"),
-                        SampleName=extract_targets(dada2, "SampleName"),
-                        amplicon_group=extract_targets(dada2, "amplicon_group"))
+  targets <- data.frame(FileName=extract_targets(dada2_filtering, "filtered_seq_output"),
+                        SampleName=extract_targets(dada2_filtering, "SampleName"),
+                        amplicon_group=extract_targets(dada2_filtering, "amplicon_group"))
   
   # Join with truncation length parameters and check no missing values
   targets <- full_join(targets, taxonomy_ref, by="SampleName")

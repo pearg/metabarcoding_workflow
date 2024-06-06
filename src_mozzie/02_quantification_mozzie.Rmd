@@ -418,7 +418,7 @@ p_abundance <- "0.00001"
 
 # The minimum portion of samples that a feature must have a relative abundance of at least 
 # `abundance` to be retained
-p_prevalence <- "0.01"
+p_prevalence <- "0.008"
 ```
 
 
