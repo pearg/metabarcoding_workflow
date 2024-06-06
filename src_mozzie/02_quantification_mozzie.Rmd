@@ -628,7 +628,7 @@ dir_tree(lulu_dir)
 Save output so it can be loaded in subsequent notebooks.
 
 ```{r}
-save.image(here("cache/02.RData"))
+save.image(here("results/cache/02.RData"))
 ```
 
 

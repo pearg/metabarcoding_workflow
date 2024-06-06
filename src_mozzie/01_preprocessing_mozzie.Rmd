@@ -861,8 +861,8 @@ using [QIIME 2 View](https://view.qiime2.org/), or run the `sequencing_quality_b
 Save output so it can be loaded in subsequent notebooks.
 
 ```{r}
-mkdir(here("cache"))
-save.image(here("cache/01.RData"))
+mkdir(here("results/cache"))
+save.image(here("results/cache/01.RData"))
 ```
 
 -----

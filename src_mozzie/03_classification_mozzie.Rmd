@@ -84,7 +84,7 @@ slurm_threads <- 4
 slurm_resources <- list(partition="main", ntasks=1, ncpus=slurm_threads, memory=8192)
 slurm_n_jobs <- 10
 ```
-#if running from water-prod
+# If running files transfered from water-prod
 ```{r}
 # You can use the here::here function to define a path relative to the project 
 #  directory or use an absolute path
@@ -563,7 +563,7 @@ dir_tree(classification_dir)
 Save output so it can be loaded in subsequent notebooks.
 
 ```{r}
-save.image(here("cache/03.RData"))
+save.image(here("results/cache/03.RData"))
 ```
 
 
