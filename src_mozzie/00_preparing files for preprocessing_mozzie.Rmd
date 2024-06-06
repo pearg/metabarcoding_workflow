@@ -1,9 +1,8 @@
 ---
 title: "setting up for preprocessing"
-author: "Melissa Carew"
-date: "2024-02-28"
 output: html_document
 ---
+
 # Preparation for running bioinformatic pipeline
 1.    Clone a copy of the workflow from the PEARG github repository https://github.com/pearg/metabarcoding_workflow into your server directory (for this I have set up a directory called 'git' for cloned repositories). You'll need a github account to do this (see - https://docs.github.com/en/get-started/onboarding/getting-started-with-your-github-account).
 
@@ -23,8 +22,8 @@ sample_list <- data.frame(all_files= file_names)
 # split columns for R1 and R2 files
 samples <- sample_list %>%
   dplyr::mutate(
-    filename_r1  = ifelse(grepl("R2", all_files), all_files, NA),
-    filename_r2 = ifelse(grepl("R1", all_files), all_files, NA)
+    filename_r1  = ifelse(grepl("_R2", all_files), all_files, NA),
+    filename_r2 = ifelse(grepl("_R1", all_files), all_files, NA)
   )
 
 samples$filename_r1 <- ifelse(is.na(samples$filename_r1), sample_list$all_files, NA)

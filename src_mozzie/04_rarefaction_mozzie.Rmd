@@ -230,6 +230,7 @@ The --p-max-depth should be played with if it is too high this chunk will return
 ```{r}
 # Define the AMPLICON variable with both values
 AMPLICON <- c("short", "right")
+#AMPLICON <- c("right")
 
 output_dir <- "~/git/metabarcoding_workflow/results"
 
@@ -522,7 +523,7 @@ right_rf30_table_av <- right_rf30_table %>%
 # alpha rarefraction plot of data for right amplicon at of sequencing depth of upto 10K
 ggplot(data = right_rf30_table_av, aes(x = depth, y = avg_ASV_no, group = sample_id, color = sample_id)) +
   geom_line(show.legend = FALSE) +
-  labs(title = "right amplicon alpha rarefraction at 30K sequencing depth",
+  labs(title = "right amplicon alpha rarefraction at 20K sequencing depth",
        x = "sequencing depth",
        y = "number of ASVs",
        color = "Sample ID") +

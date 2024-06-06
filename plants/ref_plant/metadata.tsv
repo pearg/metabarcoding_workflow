@@ -1,0 +1,4 @@
+sample-id	group	forward-primer	forward-sequence	reverse-primer	reverse-sequence
+rbcL19_rbcLZ1	rbcl	rbcL19	AGATTCCGCAGCCACTGCAGCCCCTGCTTC	rbcLZ1	ATGTCACCACAAACAGAGACTAAAGCAAGT
+UniplantF_UniplantR	its2	UniplantF	TGTGAATTGCARRATYCMG	UniplantR	CCCGHYTGAYYTGRGGTCDC
+trnLg_trnLh	trnl	trnLg	GGGCAATCCTGAGCCAA	trnLh	CCATTGAGTCTCTGCACCTATC

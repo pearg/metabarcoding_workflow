@@ -14,7 +14,7 @@ output: html_document
 library(dplyr)
 
 # list files in the folder containing raw data files
-file_names <- list.files("~/git/metabarcoding_workflow/data/raw")
+file_names <- list.files("~/git/metabarcoding_workflow/plants/data/raw")
 
 # create a dataframe with the file names
 sample_list <- data.frame(all_files= file_names)
@@ -22,8 +22,8 @@ sample_list <- data.frame(all_files= file_names)
 # split columns for R1 and R2 files
 samples <- sample_list %>%
   dplyr::mutate(
-    filename_r1  = ifelse(grepl("R2", all_files), all_files, NA),
-    filename_r2 = ifelse(grepl("R1", all_files), all_files, NA)
+    filename_r1  = ifelse(grepl("_R2", all_files), all_files, NA),
+    filename_r2 = ifelse(grepl("_R1", all_files), all_files, NA)
   )
 
 samples$filename_r1 <- ifelse(is.na(samples$filename_r1), sample_list$all_files, NA)
@@ -49,11 +49,11 @@ samples <- samples %>%
    dplyr::mutate(factor = sub("(rep1|rep2|rep3|rep4|rep5|rep6)$", "", factor))
 
 # Add "./data/raw/" to the beginning of the "File_Name" column
-samples$filename_r1 <- paste0("./data/raw/",samples$filename_r1)
-samples$filename_r2 <- paste0("./data/raw/",samples$filename_r2)
+samples$filename_r1 <- paste0("./plants/data/raw/",samples$filename_r1)
+samples$filename_r2 <- paste0("./plants/data/raw/",samples$filename_r2)
 
 # Write table '.tsv' to analysis directory
-write.table(samples, file = "~/git/metabarcoding_workflow/data/metadata/samples.tsv", sep = "\t", row.names = FALSE, quote = FALSE)
+write.table(samples, file = "~/git/metabarcoding_workflow/plants/data/metadata/samples.tsv", sep = "\t", row.names = FALSE, quote = FALSE)
 ```
 
 # Some more on using github (if you haven't before)

@@ -23,8 +23,6 @@ output:
     css: "custom.css"
 ---
 
-
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(warning=TRUE, message=TRUE, error=TRUE, echo=TRUE, results="hold")
 knitr::opts_knit$set(root.dir = "..")
@@ -32,9 +30,12 @@ options(digits=4)
 options(width=120)
 ```
 
-
 This notebook performs quantification for your metabarcoding analysis. This notebook depends on the outputs of the previous notebook, `01_preprocessing.Rmd` where we preprocessed the sequencing data. In this notebook, first, we'll create new QIIME artifact files for each amplicon group, so each file contains all samples corresponding to that group. We'll then use DADA2 to denoise sequence data and generate feature tables and feature data. Lastly, we'll run [LULU](https://github.com/tobiasgf/lulu) to perform distribution-based post-clustering curation of the ASV sequences.
 
+```{r}
+#reset directory 
+uomshare <- "/mnt/uomShare/wergStaff/MelCarew/git-data/miseq18/metabarcoding_workflow/"
+```
 
 # Load
 
@@ -53,7 +54,7 @@ suppressPackageStartupMessages({
 xaringanExtra::use_panelset()
 
 # Load workspace from the previous notebook
-load(here::here("cache/01.RData"))
+load(paste0(uomshare,"cache/01.RData"))
 ```
 
 ```{r}
@@ -72,7 +73,6 @@ use_slurm <- FALSE
 #slurm_resources <- list(partition="main", ntasks=1, ncpus=slurm_threads, memory=4096)
 #slurm_n_jobs <- 10
 ```
-
 
 # Combine into amplicon groups
 
@@ -104,16 +104,12 @@ targets <- targets %>%
          output_r2=file.path(combined_dir, amplicon_group, 
                              paste0(Factor, "_X_L001_R2_001.fastq.gz")))
 
-combine_1_targets <- here("tmp/combine_1_targets.txt")
+combine_1_targets <- paste0(uomshare, "tmp/combine_1_targets.txt")
 write_targets(targets, file=combine_1_targets)
 ```
 
-
-
-::::: {.panelset}
-
-::: {.panel}
-
+::: panelset
+::: panel
 #### Run output {.panel-name}
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
@@ -129,33 +125,26 @@ combine_1 <- renderWF(combine_1, inputvars=c(FileName="_INPUT_PATH_",
                                              Factor="_SAMPLE_NAME_"))
 run_jobs(combine_1)
 ```
-
 :::
 
-::: {.panel}
-
+::: panel
 #### Command list {.panel-name}
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 # Print commands that were run
 cmdlist(combine_1)
 ```
-
 :::
 
-::: {.panel}
-
+::: panel
 #### Output directory files {.panel-name}
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 # List files in output directory
 dir_tree(combined_dir)
 ```
-
 :::
-
-::::
-
+:::
 
 ### Import step
 
@@ -171,15 +160,12 @@ targets <- unique(targets)
 targets <- targets %>% 
   mutate(output=file.path(combined_dir, paste0(amplicon_group, ".qza")))
 
-combine_2_targets <- here("tmp/combine_2_targets.txt")
+combine_2_targets <- paste0(uomshare, "tmp/combine_2_targets.txt")
 write_targets(targets, file=combine_2_targets)
 ```
 
-
-::::: {.panelset}
-
-::: {.panel}
-
+::: panelset
+::: panel
 #### Run output {.panel-name}
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
@@ -190,35 +176,28 @@ combine_2 <- renderWF(combine_2, inputvars=c(FileName="_INPUT_PATH_",
                                              output="_OUTPUT_PATH_"))
 run_jobs(combine_2)
 ```
-
 :::
 
-::: {.panel}
-
+::: panel
 #### Command list {.panel-name}
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 # Print commands that were run
 cmdlist(combine_2)
 ```
-
 :::
 
-::: {.panel}
-
+::: panel
 #### Output directory files {.panel-name}
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 # List files in output directory
 dir_tree(combined_dir)
 ```
-
+:::
 :::
 
-::::
-
-
------
+------------------------------------------------------------------------
 
 # DADA2
 
@@ -259,15 +238,12 @@ targets <- targets %>%
 # targets <- targets %>% filter(SampleName == "short")
 targets <- targets %>% filter(SampleName %in% c("short", "right"))
 
-dada2_targets <- here("tmp/dada2_targets.txt")
+dada2_targets <- paste0(uomshare, "tmp/dada2_targets.txt")
 write_targets(targets, file=dada2_targets)
 ```
 
-
-::::: {.panelset}
-
-::: {.panel}
-
+::: panelset
+::: panel
 #### Run output {.panel-name}
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
@@ -282,35 +258,28 @@ dada2 <- renderWF(dada2, inputvars=c(FileName="_INPUT_PATH_",
                                      table_output="_TABLE_PATH_"))
 run_jobs(dada2)
 ```
-
-
 :::
 
-::: {.panel}
-
+::: panel
 #### Command list {.panel-name}
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 # Print commands that were run
 cmdlist(dada2)
 ```
-
 :::
 
-::: {.panel}
-
+::: panel
 #### Output directory files {.panel-name}
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 # List files in output directory
 dir_tree(dada2_dir)
 ```
-
+:::
 :::
 
-::::
-
------
+------------------------------------------------------------------------
 
 # DADA2 visualisation
 
@@ -326,16 +295,13 @@ targets <- targets %>%
            file.path(dada2_dir, paste0(amplicon_group, "_denoising_stats.qzv")),
   )
 
-dada2_vis_targets <- here("tmp/dada2_vis_targets.txt")
+dada2_vis_targets <- paste0(uomshare, "tmp/dada2_vis_targets.txt")
 
 write_targets(targets, file=dada2_vis_targets)
 ```
 
-
-::::: {.panelset}
-
-::: {.panel}
-
+::: panelset
+::: panel
 #### Run output {.panel-name}
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
@@ -345,6 +311,97 @@ dada2_vis <- set_logs_dir(dada2_vis, logs_dir)
 dada2_vis <- renderWF(dada2_vis, inputvars=c(stats_qza="_INPUT_PATH_",
                                              stats_qzv="_OUTPUT_QZV_"))
 run_jobs(dada2_vis)
+```
+:::
+
+::: panel
+#### Command list {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+# Print commands that were run
+cmdlist(dada2_vis)
+```
+:::
+
+::: panel
+#### Output directory files {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+# List files in output directory
+dir_tree(dada2_dir)
+```
+:::
+:::
+
+# View DADA2 stats
+
+```{r}
+paged_table(read_qza(paste0(uomshare,"dada2/short_denoising_stats.qza"))$data)
+```
+
+```{r}
+paged_table(read_qza(paste0(uomshare, "dada2/right_denoising_stats.qza"))$data)
+```
+
+------------------------------------------------------------------------
+
+# DADA2 filtering
+
+Remove low frequency ASVs from DADA2 tables. First filter table with `filter-features-conditionally`, then filter matching sequences with `filter-seqs`.
+
+```{r}
+# Setup targets
+targets <- data.frame(FileName=extract_targets(dada2, "table_output"),
+                      SampleName=extract_targets(dada2, "SampleName"),
+                      amplicon_group=extract_targets(dada2, "amplicon_group"),
+                      table_input=extract_targets(dada2, "table_output"),
+                      seq_input=extract_targets(dada2, "seq_output"))
+
+targets <- targets %>% 
+  mutate(filtered_table_output=file.path(dada2_dir, paste0(amplicon_group, "_table_filtered.qza")),
+         filtered_seq_output=file.path(dada2_dir, paste0(amplicon_group, "_representative_sequences_filtered.qza"))
+  )
+
+dada2_filtered_targets <- paste0(uomshare, "tmp/dada2_filtered_targets.txt")
+write_targets(targets, file=dada2_filtered_targets)
+```
+
+```{r}
+# Set p_abundance and p_prevalence for qiime feature-table filter-features-conditionally.
+# (keep these parameters as strings so they don't get converted to scientific notation further down)
+
+# The minimum relative abundance for a feature to be retained
+p_abundance <- "0.00001"
+# p_abundance <- "0.001" # Lower threshold for testing purposes
+
+# The minimum portion of samples that a feature must have a relative abundance of at least 
+# `abundance` to be retained
+p_prevalence <- "0.08"
+```
+
+
+
+::::: {.panelset}
+
+::: {.panel}
+
+#### Run output {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+dada2_filtering <- loadWorkflow(targets=dada2_filtered_targets, wf_file="qiime_dada2_filtering.cwl", 
+                                input_file="qiime_dada2_filtering.yml", dir_path=cwl_path)
+dada2_filtering <- set_logs_dir(dada2_filtering, logs_dir)
+dada2_filtering@yamlinput$dada2_filtering_wrapper$path <- 
+  file.path(cwl_path, "qiime_dada2_filtering_wrapper.sh")
+dada2_filtering@yamlinput$p_abundance <- p_abundance
+dada2_filtering@yamlinput$p_prevalence <- p_prevalence
+dada2_filtering@yamlinput$output_dir$path <- dada2_dir
+
+dada2_filtering <- renderWF(dada2_filtering, inputvars=c(FileName="_TABLE_INPUT_",
+                                                         seq_input="_SEQ_INPUT_",
+                                                         filtered_table_output="_TABLE_OUTPUT_",
+                                                         filtered_seq_output="_SEQ_OUTPUT_"))
+run_jobs(dada2_filtering)
 ```
 
 
@@ -356,7 +413,7 @@ run_jobs(dada2_vis)
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 # Print commands that were run
-cmdlist(dada2_vis)
+cmdlist(dada2_filtering)
 ```
 
 :::
@@ -375,15 +432,23 @@ dir_tree(dada2_dir)
 ::::
 
 
+-----
 
-# View DADA2 stats
+# Check filtering
+
+Check dimensions of the table data pre and post-filtering.
 
 ```{r}
-paged_table(read_qza(here("results/dada2/short_denoising_stats.qza"))$data)
+before_filtering <- read_qza(file.path(dada2_dir, "short_table.qza"))
+after_filtering <- read_qza(file.path(dada2_dir, "short_table_filtered.qza"))
 ```
 
 ```{r}
-paged_table(read_qza(here("results/dada2/right_denoising_stats.qza"))$data)
+print("Pre-filtering:")
+dim(before_filtering$data)
+
+print("Post-filtering:")
+dim(after_filtering$data)
 ```
 
 
@@ -393,33 +458,29 @@ paged_table(read_qza(here("results/dada2/right_denoising_stats.qza"))$data)
 
 ## Run vsearch
 
-Create a match list file for LULU. This step uses vsearch to match a collection of ASVs against themselves and
-outputs a file to be used in the next step.
+Create a match list file for LULU. This step uses vsearch to match a collection of ASVs against themselves and outputs a file to be used in the next step.
 
 ```{r}
 lulu_dir <- file.path(results_dir, "lulu")
 mkdir(lulu_dir)
 
 # Setup targets
-targets <- data.frame(FileName=extract_targets(dada2, "seq_output"),
-                      SampleName=extract_targets(dada2, "SampleName"),
-                      amplicon_group=extract_targets(dada2, "amplicon_group"))
+targets <- data.frame(FileName=extract_targets(dada2_filtering, "filtered_seq_output"),
+                      SampleName=extract_targets(dada2_filtering, "SampleName"),
+                      amplicon_group=extract_targets(dada2_filtering, "amplicon_group"))
 
 targets <- targets %>% 
   mutate(match_list_path=
            file.path(lulu_dir, paste0(amplicon_group, "_match_list.txt"))
   )
 
-lulu_vsearch_targets <- here("tmp/lulu_vsearch_targets.txt")
+lulu_vsearch_targets <- paste0(uomshare, "tmp/lulu_vsearch_targets.txt")
 
 write_targets(targets, file=lulu_vsearch_targets)
 ```
 
-
-::::: {.panelset}
-
-::: {.panel}
-
+::: panelset
+::: panel
 #### Run output {.panel-name}
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
@@ -436,48 +497,39 @@ lulu_vsearch <- renderWF(lulu_vsearch,
 
 run_jobs(lulu_vsearch)
 ```
-
-
 :::
 
-::: {.panel}
-
+::: panel
 #### Command list {.panel-name}
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 # Print commands that were run
 cmdlist(lulu_vsearch)
 ```
-
 :::
 
-::: {.panel}
-
+::: panel
 #### Output directory files {.panel-name}
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 # List files in output directory
 dir_tree(lulu_dir)
 ```
-
 :::
-
-::::
-
+:::
 
 ## Run lulu
 
 Run LULU to merge features together.
-
 
 ```{r}
 # TODO: encapsulate this into a function after checking if lulu arguments need to be changed
 ```
 
 ```{r}
-short_table <- read_qza(here("results/dada2/short_table.qza"))
+short_table <- read_qza(file.path(dada2_dir, "short_table_filtered.qza"))
 short_table_df <- data.frame(short_table$data)
-short_match_list <- read.table(here("results/lulu/short_match_list.txt"))
+short_match_list <- read.table(file.path(lulu_dir, "short_match_list.txt"))
 
 # TODO: Currently using default parameters
 z <- capture.output(short_lulu <- lulu(short_table_df, short_match_list))
@@ -487,14 +539,13 @@ dim(short_lulu$curated_table)
 ```
 
 ```{r}
-saveRDS(short_lulu, file=here("results/lulu/short_lulu.rds"))
+saveRDS(short_lulu, file=paste0(uomshare, "lulu/short_lulu.rds"))
 ```
 
-
 ```{r}
-right_table <- read_qza(here("results/dada2/right_table.qza"))
+right_table <- read_qza(file.path(dada2_dir, "right_table_filtered.qza"))
 right_table_df <- data.frame(right_table$data)
-right_match_list <- read.table(here("results/lulu/right_match_list.txt"))
+right_match_list <- read.table(file.path(lulu_dir, "right_match_list.txt"))
 
 # TODO: Currently using default parameters
 z <- capture.output(right_lulu <- lulu(right_table_df, right_match_list))
@@ -504,27 +555,25 @@ dim(right_lulu$curated_table)
 ```
 
 ```{r}
-saveRDS(right_lulu, file=here("results/lulu/right_lulu.rds"))
+saveRDS(right_lulu, file=paste0(uomshare, "lulu/right_lulu.rds"))
 ```
-
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 # List files in output directory
 dir_tree(lulu_dir)
 ```
 
------
+------------------------------------------------------------------------
 
 # Save output
 
 Save output so it can be loaded in subsequent notebooks.
 
 ```{r}
-save.image(here("cache/02.RData"))
+save.image(paste0(uomshare,"cache/02.RData"))
 ```
 
-
------
+------------------------------------------------------------------------
 
 # Session Info
 
@@ -535,4 +584,3 @@ if (nzchar(system.file(package="devtools"))) {
   sessionInfo()
 }
 ```
-

@@ -56,7 +56,7 @@ suppressPackageStartupMessages({
 xaringanExtra::use_panelset()
 
 # Load workspace from the previous notebook
-load(here::here("cache/02.RData"))
+load(here::here("plants/cache/02.RData"))
 ```
 
 ```{r}
@@ -72,7 +72,9 @@ Sys.setenv(PYTHONPATH="/mnt/galaxy/gvl/software/shared_envs/qiime2_2023-07/lib/p
 ```{r}
 # For the mozzie server, the root disk can run out of space, so it's safer to set the tmp directory 
 # to a different location
+Sys.setenv(TMPDIR="/mnt/galaxy/home/mecarew/tmp")
 tmp_dir_path <- "/mnt/galaxy/tmp"
+#tmp_dir_path <- "/mnt/galaxy/home/mecarew/tmp"
 # tmp_dir_path <- "/tmp"
 ```
 
@@ -82,38 +84,27 @@ slurm_threads <- 4
 slurm_resources <- list(partition="main", ntasks=1, ncpus=slurm_threads, memory=8192)
 slurm_n_jobs <- 10
 ```
-
 -----
 
 # Create databases for classification
-
+#trnl
 ```{r}
-ref_db_dir <- "/mnt/galaxy/home/mecarew/git/DNA_barcode_reference_database_construction/final_library"
+#results_dir <- here::here("plants/results")
 
-db_coi_ids=list(
-  short=file.path(ref_db_dir, "short_db_2023-07.txt"),
-  left=file.path(ref_db_dir, "left_db_2023-07.txt"),
-  right=file.path(ref_db_dir, "right_db_2023-07.txt"),
-  long=file.path(ref_db_dir, "long_db_2023-07.txt")
-)
+ref_db_dir <- "/mnt/galaxy/home/mecarew/git/DNA_barcode_reference_database_construction/Plants/final_library"
 
-# FASTA file with COI sequences
+db_trnl_ids=list(trnl=file.path(ref_db_dir, "trnl_db_2024-05.txt"))
+
+# FASTA file with trnl sequences
 db_fasta_files=list(
-  short=file.path(ref_db_dir, "short_db_2023-07.fasta"),
-  left=file.path(ref_db_dir, "left_db_2023-07.fasta"),
-  right=file.path(ref_db_dir, "right_db_2023-07.fasta"),
-  long=file.path(ref_db_dir, "long_db_2023-07.fasta")
-)
+  trnl=file.path(ref_db_dir, "trnl_db_2024-05.fasta"))
 ```
-
-
 
 ```{r}
 taxonomy_ref <- data.frame(SampleName=names(db_fasta_files),
-                           db_coi_id_file=unlist(db_coi_ids[names(db_fasta_files)]),
+                           db_trnl_id_file=unlist(db_trnl_ids[names(db_fasta_files)]),
                            db_fasta_file=unlist(db_fasta_files[names(db_fasta_files)]))
 ```
-
 
 ```{r}
 classification_dir <- file.path(results_dir, "classification")
@@ -123,7 +114,7 @@ mkdir(classification_db_dir)
 
 # Setup targets
 targets <- data.frame(FileName=taxonomy_ref$db_fasta_file,
-                      taxonomy_id_file=taxonomy_ref$db_coi_id_file,
+                      taxonomy_id_file=taxonomy_ref$db_trnl_id_file,
                       SampleName=taxonomy_ref$SampleName,
                       amplicon_group=taxonomy_ref$SampleName,
                       output_prefix=paste0(taxonomy_ref$SampleName))
@@ -138,7 +129,7 @@ targets <- targets %>%
 database_targets <- here("tmp/database_targets.txt")
 
 # WIP: For the moment, only run the short/right amplicions
-write_targets(targets %>% filter(SampleName %in% c("short", "right")), file=database_targets)
+write_targets(targets %>% filter(SampleName %in% c("trnl")), file=database_targets)
 ```
 
 
@@ -241,7 +232,7 @@ if (! big_dataset) {
   prelim_classification_targets <- here("tmp/classification_prelim_targets.txt")
   
   # WIP: For the moment, only run the short and right amplicions
-  write_targets(targets %>% filter(amplicon_group %in% c("short", "right")), file=prelim_classification_targets)
+  write_targets(targets %>% filter(amplicon_group %in% c("trnl")), file=prelim_classification_targets)
 }
 ```
 
@@ -273,7 +264,7 @@ if (big_dataset) {
   prelim_classification_targets <- here("tmp/classification_prelim_vsearch_targets.txt")
   
   # WIP: For the moment, only run the short amplicions
-  write_targets(targets %>% filter(amplicon_group %in% c("short", "right")), file=prelim_classification_targets)
+  write_targets(targets %>% filter(amplicon_group %in% c("trnl")), file=prelim_classification_targets)
 }
 ```
   
@@ -414,7 +405,7 @@ write_id_files_for_thresholds <- function(threshold_df, file_path, file_prefix) 
 thresholds_list <- list()
 for (amplicon_group in amplicon_groups) {
   # WIP: only short and right amplicon groups for now
-  if (! amplicon_group %in% c("short", "right")) {
+  if (! amplicon_group %in% c("trnl")) {
     next
   }
   print(amplicon_group)
@@ -433,9 +424,8 @@ for (amplicon_group in amplicon_groups) {
 
 ```{r}
 threshold_file_list <- data.frame(
-  amplicon_group=c("short", "right"),
-  file_list=c(here("results/classification/thresholds/short_files.txt"),
-              here("results/classification/thresholds/right_files.txt"))
+  amplicon_group=c("trnl"),
+  file_list=c(here("plants/results/classification/thresholds/trnl_files.txt"))
 )
 paged_table(threshold_file_list)
 ```
@@ -458,11 +448,11 @@ ref_db <- data.frame(
   taxonomy_db=extract_targets(create_database, "taxonomy_output")
 )
 targets <- left_join(targets, ref_db, by="amplicon_group")
-stopifnot(all(! is.na(targets)))
+#stopifnot(all(! is.na(targets)))
 
 # Join with ID file lists
 targets <- left_join(targets, threshold_file_list, by="amplicon_group")
-targets <- targets %>% filter(! is.na(file_list))
+#targets <- targets %>% filter(! is.na(file_list))
 
 # This can be changed if you want different parameters
 targets$min_consensus <- 0.51
@@ -475,7 +465,7 @@ targets <- targets %>%
 classification_targets <- here("tmp/classification_targets.txt")
 
 # WIP: For the moment, only run the short and right amplicions
-write_targets(targets %>% filter(amplicon_group %in% c("short", "right")), file=classification_targets)
+write_targets(targets %>% filter(amplicon_group %in% c("trnl")), file=classification_targets)
 ```
 
 
@@ -494,7 +484,7 @@ classification <- loadWorkflow(targets=classification_targets,
 classification <- set_logs_dir(classification, logs_dir)
 classification@yamlinput$taxonomy_wrapper$path <- 
   file.path(cwl_path, "qiime_classification_by_threshold_wrapper.sh")
-# classification@yamlinput$tmp_dir <- tmp_dir_path
+classification@yamlinput$tmp_dir <- tmp_dir_path
 classification@yamlinput$n_threads <- slurm_threads
 classification@yamlinput$output_dir$path <- classification_dir
 classification <- renderWF(classification, 

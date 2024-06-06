@@ -30,8 +30,6 @@ output:
     css: "custom.css"
 ---
 
-
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(warning=TRUE, message=TRUE, error=TRUE, echo=TRUE, results="hold")
 knitr::opts_knit$set(root.dir = "..")
@@ -40,27 +38,32 @@ options(digits=4)
 options(width=120)
 ```
 
-
-
 This notebook runs through some preprocessing steps for metabarcoding analysis. First we'll load in some sample information containing sample metadata and primer combinations, then we'll import the FASTQ sequencing files into QIIME artifact files. We'll then demultiplex sequences based on primer combinations and split the sequences into amplicon groups. Lastly, we'll trim adapters and calculate some summary statistics.
 
 # User settings
 
 The first thing we'll do is set the directory that stores the workflow outputs.
+
 ```{r}
 # You can use the here::here function to define a path relative to the project 
 #  directory or use an absolute path
-results_dir <- here::here("results")
+#results_dir <- here::here("results")
+
+#***NOTE: 'test' will need to be change to your miseq folder name****
+
+results_dir <- "/mnt/uomShare/wergStaff/MelCarew/git-data/miseq18/metabarcoding_workflow"
+
+# Set the directory path for files to be stored on uomshare (NOTE: 'test' will need to be change to your miseq folder name)
+uomshare <- "/mnt/uomShare/wergStaff/MelCarew/git-data/miseq18/metabarcoding_workflow/"
 
 # Log files will be stored inside the logs directory inside the results directory
 logs_dir <- file.path(results_dir, "logs")
 ```
 
-The outputs of this workflow will be stored in:  
+The outputs of this workflow will be stored in:\
 **`r results_dir`**.
 
-We also have the option to run the jobs in this workflow using SLURM if you're working on a cluster
-that uses it.
+We also have the option to run the jobs in this workflow using SLURM if you're working on a cluster that uses it.
 
 ```{r class.source='fold-show'}
 use_slurm <- FALSE
@@ -72,7 +75,6 @@ use_slurm <- FALSE
 #slurm_resources <- list(partition="main", ntasks=1, ncpus=1, memory=4096)
 #slurm_n_jobs <- 10
 ```
-
 
 # Load libraries and files
 
@@ -153,30 +155,27 @@ run_jobs <- function(wf, slurm=use_slurm, resources=slurm_resources, quiet=TRUE)
 }
 ```
 
-
 ### Sample information
 
 A file containing sample information is required. We'll read in `data/metadata/samples.tsv` which contains one line for each sample. The columns in the TSV file are required to be:
 
-- `filename_r1`: the path to the FASTQ file containing forward reads of the sequencing run 
-- `filename_r2`: the path to the FASTQ file containing reverse reads of the sequencing run
-- `sample_name`: a unique sample name
-- `factor`: a factor of interest for your dataset (if you don't have a factor of interest, you can set the values as the same as the sample name)
+-   `filename_r1`: the path to the FASTQ file containing forward reads of the sequencing run
+-   `filename_r2`: the path to the FASTQ file containing reverse reads of the sequencing run
+-   `sample_name`: a unique sample name
+-   `factor`: a factor of interest for your dataset (if you don't have a factor of interest, you can set the values as the same as the sample name)
 
 ```{r}
-samples_df <- read.table(here("data/metadata/samples.tsv"), header=TRUE, stringsAsFactors=FALSE)
+samples_df <- read.table(paste0(uomshare,"data/metadata/samples.tsv"), header=TRUE, stringsAsFactors=FALSE)
 paged_table(samples_df)
 ```
-
-
 
 ### Primers
 
 We also need a file that contains the primers that the metabarcoding project uses. We'll read in `ref/primers.tsv` which contains one row for each primer used. The columns of this file are required to be:
 
-- `primer`: the unique primer name
-- `primer_seq`: the primer sequence
-- `primer_rc`: the reverse complement of the primer sequence.
+-   `primer`: the unique primer name
+-   `primer_seq`: the primer sequence
+-   `primer_rc`: the reverse complement of the primer sequence.
 
 ```{r}
 primers_filename <- here("ref/primers.tsv")
@@ -186,18 +185,16 @@ suppressMessages(
 paged_table(primers_df)
 ```
 
-
-
 ### Primer combinations
 
 Lastly, we need the group that each primer combination corresponds to. This data is read in from `ref/metadata.tsv` and contains one row for each primer combination. The columns of this file are required to be:
 
-- `sample-id`: the unique name for the primer combination
-- `group`: the metabarcoding group that the combination belongs to
-- `forward-primer`: the name of the forward primer
-- `forward-sequence`: the sequence corresponding to the forward primer
-- `reverse-primer`: the name of the reverse primer
-- `reverse-sequence`: the sequence corresponding to the reverse primer
+-   `sample-id`: the unique name for the primer combination
+-   `group`: the metabarcoding group that the combination belongs to
+-   `forward-primer`: the name of the forward primer
+-   `forward-sequence`: the sequence corresponding to the forward primer
+-   `reverse-primer`: the name of the reverse primer
+-   `reverse-sequence`: the sequence corresponding to the reverse primer
 
 ```{r}
 metadata_filename <- here("ref/metadata.tsv")
@@ -207,13 +204,11 @@ suppressMessages(
 paged_table(metadata_df)
 ```
 
-
------
+------------------------------------------------------------------------
 
 # Import data
 
-To import data into QIIME, the FASTQ files for each library need to be in separate directories.
-First, let's check that all files exist from the `samples.tsv` file provided.
+To import data into QIIME, the FASTQ files for each library need to be in separate directories. First, let's check that all files exist from the `samples.tsv` file provided.
 
 ```{r}
 # Check if all files exist from samples_df
@@ -223,35 +218,46 @@ data.frame(sample_name=samples_df$sample_name,
   paged_table()
 ```
 
-If all the files exist, we can now create a separate directory for each sample and link back to the original FASTQ files using symbolic links (shortcuts).
+If all the files exist, we can now create a separate directory for each sample have changed this -link back to the original FASTQ files using symbolic links (shortcuts). Please note Mel has changed this for uomshare to not use symlinks
 
 ```{r}
 # Create some directories first
-dir_create(results_dir)
-dir_create(logs_dir)
-dir_create(here("tmp"))
+dir.create(results_dir)
+dir.create(logs_dir)
+dir.create(paste0(uomshare, "tmp"))
 
-# Create symlinks
+# Create import_data directory if it doesn't exist
 import_data_dir <- file.path(results_dir, "import_data")
+if (!dir.exists(import_data_dir)) {
+  dir.create(import_data_dir, recursive = TRUE)
+}
+
 import_targets <- list()
+
 for (i in seq_len(nrow(samples_df))) {
   x <- as.list(samples_df[i,])
   lib_dir <- file.path(import_data_dir, x$sample_name)
   import_targets[[i]] <- lib_dir
-  if (! dir.exists(lib_dir)) {
-    dir.create(lib_dir, recursive=TRUE)
+  
+  if (!dir.exists(lib_dir)) {
+    dir.create(lib_dir, recursive = TRUE)
   }
+  
   stopifnot(str_detect(x$filename_r1, "R1"))
   stopifnot(str_detect(x$filename_r2, "R2"))
-  if (! file.exists(file.path(lib_dir, "forward.fastq.gz"))) {
-    file.symlink(from=file.path(here(x$filename_r1)),
-               to=file.path(lib_dir, "forward.fastq.gz"))
+  
+  # Copy files instead of creating symlinks
+  if (!file.exists(file.path(lib_dir, "forward.fastq.gz"))) {
+    file.copy(from = file.path(here(x$filename_r1)), 
+              to = file.path(lib_dir, "forward.fastq.gz"))
   }
-  if (! file.exists(file.path(lib_dir, "reverse.fastq.gz"))) {
-    file.symlink(from=file.path(here(x$filename_r2)),
-                 to=file.path(lib_dir, "reverse.fastq.gz"))
+  
+  if (!file.exists(file.path(lib_dir, "reverse.fastq.gz"))) {
+    file.copy(from = file.path(here(x$filename_r2)), 
+              to = file.path(lib_dir, "reverse.fastq.gz"))
   }
 }
+
 import_targets <- unlist(import_targets)
 ```
 
@@ -269,17 +275,15 @@ targets <- data.frame(FileName=import_targets,
                       SampleName=basename(import_targets),
                       Factor=basename(import_targets),
                       output=paste0(import_targets, ".qza"))
-import_targets <- here("tmp/import_targets.txt")
+import_targets <- paste0(uomshare, "tmp/import_targets.txt")
 write.table(targets, file=import_targets, sep="\t", row.names=FALSE, quote=FALSE)
 cwl_path <- here("param/cwl")
 ```
 
 And run the command to import files into QIIME2 artifact files.
 
-::::: {.panelset}
-
-::: {.panel}
-
+::: panelset
+::: panel
 #### Run commands {.panel-name}
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
@@ -289,34 +293,28 @@ import <- renderWF(import, inputvars=c(FileName="_INPUT_PATH_", output="_OUTPUT_
 import <- set_logs_dir(import, logs_dir)
 run_jobs(import)
 ```
-
 :::
 
-::: {.panel}
-
+::: panel
 #### Command list {.panel-name}
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 # If you want to check the commands run, you can use `cmdlist` to do so
 cmdlist(import)
 ```
-
 :::
 
-::: {.panel}
-
+::: panel
 #### Output directory files {.panel-name}
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 # List files in output directory
 dir_tree(import_data_dir)
 ```
-
+:::
 :::
 
-::::
-
------
+------------------------------------------------------------------------
 
 # Demux
 
@@ -333,15 +331,12 @@ targets <- data.frame(FileName=extract_targets(import, "output"),
   mutate(demux_output=file.path(demux_dir, paste0(SampleName, "_demux.qza")),
          discard_output=file.path(demux_dir, paste0(SampleName, "_discard.qza")),
          log_output=file.path(demux_dir, paste0(SampleName, "_cutadapt.log")))
-demux_targets <- here("tmp/demux_targets.txt")
+demux_targets <- paste0(uomshare,"tmp/demux_targets.txt")
 write_targets(targets, file=demux_targets)
 ```
 
-
-::::: {.panelset}
-
-::: {.panel}
-
+::: panelset
+::: panel
 #### Run output {.panel-name}
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
@@ -353,34 +348,28 @@ demux <- renderWF(demux, inputvars=c(FileName="_INPUT_PATH_", metadata_path="_PR
                                      log_output="_LOG_PATH_"))
 run_jobs(demux)
 ```
-
 :::
 
-::: {.panel}
-
+::: panel
 #### Command list {.panel-name}
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 # Print commands that were run
 cmdlist(demux)
 ```
-
 :::
 
-::: {.panel}
-
+::: panel
 #### Output directory files {.panel-name}
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 # List files in output directory
 dir_tree(demux_dir)
 ```
-
+:::
 :::
 
-::::
-
------
+------------------------------------------------------------------------
 
 # Split amplicon groups
 
@@ -404,14 +393,12 @@ for (amplicon_group in unique(metadata_df$group)) {
 }
 
 targets <- do.call(rbind, target_list)
-split_targets <- here("tmp/split_targets.txt")
+split_targets <- paste0(uomshare,"tmp/split_targets.txt")
 write_targets(targets, file=split_targets)
 ```
 
-::::: {.panelset}
-
-::: {.panel}
-
+::: panelset
+::: panel
 #### Run output {.panel-name}
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
@@ -422,35 +409,28 @@ split <- renderWF(split, inputvars=c(FileName="_INPUT_PATH_", metadata_path="_ME
                                      condition="_CONDITION_", output="_OUTPUT_PATH_"))
 run_jobs(split)
 ```
-
 :::
 
-::: {.panel}
-
+::: panel
 #### Command list {.panel-name}
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 # Print commands that were run
 cmdlist(split)
 ```
-
 :::
 
-::: {.panel}
-
+::: panel
 #### Output directory files {.panel-name}
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 # List files in output directory
 dir_tree(demux_dir)
 ```
-
+:::
 :::
 
-::::
-
-
------
+------------------------------------------------------------------------
 
 # Trim adapters
 
@@ -491,14 +471,12 @@ targets <- targets %>%
          output=file.path(trimmed_dir, paste0(SampleName, ".qza")),
          log_path=file.path(trimmed_dir, paste0(SampleName, "_cutadapt_trim.log")))
 
-trimmed_targets <- here("tmp/trimmed_targets.txt")
+trimmed_targets <- paste0(uomshare,"tmp/trimmed_targets.txt")
 write_targets(targets, file=trimmed_targets)
 ```
 
-::::: {.panelset}
-
-::: {.panel}
-
+::: panelset
+::: panel
 #### Run output {.panel-name}
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
@@ -510,40 +488,34 @@ trim <- renderWF(trim, inputvars=c(FileName="_INPUT_PATH_", adapter_f="_ADAPTER_
                                    log_path="_LOG_PATH_"))
 run_jobs(trim)
 ```
-
 :::
 
-::: {.panel}
-
+::: panel
 #### Command list {.panel-name}
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 # Print commands that were run
 cmdlist(trim)
 ```
-
 :::
 
-::: {.panel}
-
+::: panel
 #### Output directory files {.panel-name}
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 # List files in output directory
 dir_tree(trimmed_dir)
 ```
-
+:::
 :::
 
-::::
-
------
+------------------------------------------------------------------------
 
 # Trimming stats
 
 The code to extract the trimming stats from cutadapt's log files is a bit ad hoc and will likely break if cutadapt changes it's verbose output. If this breaks, skip or comment out the code in this section, since nothing downstream depends on it.
 
-You can also view the log files in more detail in:  
+You can also view the log files in more detail in:\
 **`r trimmed_dir`**.
 
 ```{r}
@@ -574,7 +546,6 @@ extract_cutadapt_stats <- function(summary_text) {
 }
 ```
 
-
 ```{r}
 indiv_trim_stats <- list()
 for (i in seq_len(nrow(targets))) {
@@ -600,18 +571,17 @@ paged_table(trim_stats_df)
 
 The columns in the above table refer to:
 
-- `sample-id`: the sample name and amplicon group
-- `input_read_pairs`: the number of read pairs that were processed
-- `r1_detect_adapter`: the number of forward reads detected to contain the adapter
-- `r2_detect_adapter`: the number of reverse reads detected to contain the adapter
-- `filtered_pairs`: the number of reads removed after trimming due to being too short
-- `passed_pairs`: the number of reads that passed after trimming
-- `total_bp`: the number of base pairs that 
-- `total_input_bp`: the number of base pairs that were processed
-- `total_output_bp`: the number of base pairs that passed after trimming
+-   `sample-id`: the sample name and amplicon group
+-   `input_read_pairs`: the number of read pairs that were processed
+-   `r1_detect_adapter`: the number of forward reads detected to contain the adapter
+-   `r2_detect_adapter`: the number of reverse reads detected to contain the adapter
+-   `filtered_pairs`: the number of reads removed after trimming due to being too short
+-   `passed_pairs`: the number of reads that passed after trimming
+-   `total_bp`: the number of base pairs that
+-   `total_input_bp`: the number of base pairs that were processed
+-   `total_output_bp`: the number of base pairs that passed after trimming
 
-
------
+------------------------------------------------------------------------
 
 # Summary and visualisation
 
@@ -631,7 +601,7 @@ targets <- data.frame(FileName=extract_targets(trim, "output"),
 targets <- targets %>% 
   mutate(output=file.path(summary_dir, paste0(SampleName, ".qzv")),
          output_dir=summary_dir)
-summary_targets <- here("tmp/summary_targets.txt")
+summary_targets <- paste0(uomshare,"tmp/summary_targets.txt")
 write_targets(targets, file=summary_targets)
 
 # Setup workflow
@@ -643,45 +613,33 @@ summary <- renderWF(summary, inputvars=c(FileName="_INPUT_PATH_", output="_OUTPU
                                          output_dir="_OUTPUT_DIR_", SampleName="_SAMPLE_NAME_"))
 ```
 
-
-::::: {.panelset}
-
-::: {.panel}
-
+::: panelset
+::: panel
 #### Run output {.panel-name}
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 run_jobs(summary)
 ```
-
-
 :::
 
-::: {.panel}
-
+::: panel
 #### Command list {.panel-name}
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 # Print commands that were run
 cmdlist(summary)
 ```
-
 :::
 
-::: {.panel}
-
+::: panel
 #### Output directory files {.panel-name}
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 # List files in output directory
 dir_tree(summary_dir)
 ```
-
 :::
-
-::::
-
-
+:::
 
 ### Per sample FASTQ counts
 
@@ -703,12 +661,8 @@ summary_df <- lapply(names(summary_list), function(x) {
   left_join(metadata_df %>% select(`sample-id`, group), by=c("sample ID"="sample-id")) %>% select(library, group, everything())
 ```
 
-
-
-::::: {.panelset}
-
-::: {.panel}
-
+::: panelset
+::: panel
 #### Counts per sample {.panel-name}
 
 ```{r}
@@ -716,11 +670,9 @@ summary_df %>%
   group_by(`library`) %>% summarise(n=sum(`forward sequence count`)) %>%
   paged_table
 ```
-
 :::
 
-::: {.panel}
-
+::: panel
 #### Counts per group {.panel-name}
 
 ```{r}
@@ -729,11 +681,9 @@ summary_df %>%
   summarise(n=sum(`forward sequence count`)) %>%
   paged_table
 ```
-
 :::
 
-::: {.panel}
-
+::: panel
 #### Counts per primer combination {.panel-name}
 
 ```{r}
@@ -741,23 +691,17 @@ summary_df %>%
   group_by(`sample ID`, group) %>% summarise(n=sum(`forward sequence count`)) %>%
   paged_table
 ```
-
 :::
 
-::: {.panel}
-
+::: panel
 #### Counts per sample & group & primer combination {.panel-name}
-
 
 ```{r}
 summary_df %>% 
   paged_table
 ```
-
 :::
-
-::::
-
+:::
 
 ### Quality plots
 
@@ -855,22 +799,21 @@ for (amplicon_group in amplicon_groups) {
 }
 ```
 
-If you want to view an individual sample's sequence base quality boxplot, you can view the sample's qzv file located in:
-**`r summary_dir`**  
+If you want to view an individual sample's sequence base quality boxplot, you can view the sample's qzv file located in: **`r summary_dir`**\
 using [QIIME 2 View](https://view.qiime2.org/), or run the `sequencing_quality_boxplots.Rmd` notebook to view all sample boxplots.
 
------
+------------------------------------------------------------------------
 
 # Save output
 
 Save output so it can be loaded in subsequent notebooks.
 
 ```{r}
-mkdir(here("cache"))
-save.image(here("cache/01.RData"))
+mkdir(paste0(uomshare,"cache"))
+save.image(paste0(uomshare,"cache/01.RData"))
 ```
 
------
+------------------------------------------------------------------------
 
 # Session Info
 
@@ -881,4 +824,3 @@ if (nzchar(system.file(package="devtools"))) {
   sessionInfo()
 }
 ```
-

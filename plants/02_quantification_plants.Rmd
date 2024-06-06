@@ -33,7 +33,7 @@ options(width=120)
 ```
 
 
-This notebook performs quantification for your metabarcoding analysis. This notebook depends on the outputs of the previous notebook, `01_preprocessing.Rmd` where we preprocessed the sequencing data. In this notebook, first, we'll create new QIIME artifact files for each amplicon group, so each file contains all samples corresponding to that group. We'll then use DADA2 to denoise sequence data and generate feature tables and feature data, and perform filtering to remove ASVs with very low prevalence. Lastly, we'll run [LULU](https://github.com/tobiasgf/lulu) to perform distribution-based post-clustering curation of the ASV sequences.
+This notebook performs quantification for your metabarcoding analysis. This notebook depends on the outputs of the previous notebook, `01_preprocessing.Rmd` where we preprocessed the sequencing data. In this notebook, first, we'll create new QIIME artifact files for each amplicon group, so each file contains all samples corresponding to that group. We'll then use DADA2 to denoise sequence data and generate feature tables and feature data. Lastly, we'll run [LULU](https://github.com/tobiasgf/lulu) to perform distribution-based post-clustering curation of the ASV sequences.
 
 
 # Load
@@ -53,7 +53,7 @@ suppressPackageStartupMessages({
 xaringanExtra::use_panelset()
 
 # Load workspace from the previous notebook
-load(here::here("cache/01.RData"))
+load(here::here("plants/cache/01.RData"))
 ```
 
 ```{r}
@@ -61,13 +61,7 @@ load(here::here("cache/01.RData"))
 current_path_env <- Sys.getenv("PATH")
 Sys.setenv(PATH=paste0("/mnt/galaxy/gvl/software/shared_envs/qiime2/bin:",
                        current_path_env))
-Sys.setenv(PYTHONPATH="/mnt/galaxy/gvl/software/shared_envs/qiime2_2023-07/lib/python3.8/site-packages/")
-```
-
-```{r}
-# For the mozzie server, the root disk can run out of space, so it's safer to set the tmp directory 
-# to a different location
-Sys.setenv(TMPDIR="/mnt/galaxy/tmp")
+Sys.setenv(PYTHONNOUSERSITE="/mnt/galaxy/gvl/software/shared_envs/qiime2/lib/python*/site-packages/")
 ```
 
 ```{r}
@@ -231,9 +225,9 @@ First, define the lengths that amplicon groups will be truncated to.
 ```{r}
 # TODO: Custom truncation lengths from file? Don't know how this should be handled
 truncation_lengths <- data.frame(
-  SampleName = c("short", "left", "right", "long"),
-  forward_trunc_length = c(140, 200, 140, 200),
-  reverse_trunc_length = c(140, 200, 200, 200)
+  SampleName = c("its2", "rbcl", "trnl"),
+  forward_trunc_length = c(150, 140, 120),
+  reverse_trunc_length = c(150, 140, 120)
 )
 paged_table(truncation_lengths)
 ```
@@ -261,7 +255,7 @@ targets <- targets %>%
   )
 
 # targets <- targets %>% filter(SampleName == "short")
-targets <- targets %>% filter(SampleName %in% c("short", "right"))
+targets <- targets %>% filter(SampleName %in% c("its2", "rbcl", "trnl"))
 
 dada2_targets <- here("tmp/dada2_targets.txt")
 write_targets(targets, file=dada2_targets)
@@ -383,14 +377,16 @@ dir_tree(dada2_dir)
 # View DADA2 stats
 
 ```{r}
-paged_table(read_qza(here("results/dada2/short_denoising_stats.qza"))$data)
+paged_table(read_qza(here("plants/results/dada2/its2_denoising_stats.qza"))$data)
 ```
 
 ```{r}
-paged_table(read_qza(here("results/dada2/right_denoising_stats.qza"))$data)
+paged_table(read_qza(here("plants/results/dada2/rbcl_denoising_stats.qza"))$data)
 ```
 
------
+```{r}
+paged_table(read_qza(here("plants/results/dada2/trnl_denoising_stats.qza"))$data)
+```
 
 # DADA2 filtering
 
@@ -513,9 +509,9 @@ lulu_dir <- file.path(results_dir, "lulu")
 mkdir(lulu_dir)
 
 # Setup targets
-targets <- data.frame(FileName=extract_targets(dada2_filtering, "filtered_seq_output"),
-                      SampleName=extract_targets(dada2_filtering, "SampleName"),
-                      amplicon_group=extract_targets(dada2_filtering, "amplicon_group"))
+targets <- data.frame(FileName=extract_targets(dada2, "seq_output"),
+                      SampleName=extract_targets(dada2, "SampleName"),
+                      amplicon_group=extract_targets(dada2, "amplicon_group"))
 
 targets <- targets %>% 
   mutate(match_list_path=
@@ -587,36 +583,36 @@ Run LULU to merge features together.
 ```
 
 ```{r}
-short_table <- read_qza(file.path(dada2_dir, "short_table_filtered.qza"))
-short_table_df <- data.frame(short_table$data)
-short_match_list <- read.table(file.path(lulu_dir, "short_match_list.txt"))
+its2_table <- read_qza(here("plants/results/dada2/its2_table.qza"))
+its2_table_df <- data.frame(its2_table$data)
+its2_match_list <- read.table(here("plants/results/lulu/its2_match_list.txt"))
 
 # TODO: Currently using default parameters
-z <- capture.output(short_lulu <- lulu(short_table_df, short_match_list))
+z <- capture.output(its2_lulu <- lulu(its2_table_df, its2_match_list))
 
-dim(short_lulu$original_table)
-dim(short_lulu$curated_table)
+dim(its2_lulu$original_table)
+dim(its2_lulu$curated_table)
 ```
 
 ```{r}
-saveRDS(short_lulu, file=file.path(lulu_dir, "short_lulu.rds"))
+saveRDS(its2_lulu, file=here("plants/results/lulu/its2_lulu.rds"))
 ```
 
 
 ```{r}
-right_table <- read_qza(file.path(dada2_dir, "right_table_filtered.qza"))
-right_table_df <- data.frame(right_table$data)
-right_match_list <- read.table(file.path(lulu_dir, "right_match_list.txt"))
+trnl_table <- read_qza(here("plants/results/dada2/trnl_table.qza"))
+trnl_table_df <- data.frame(trnl_table$data)
+trnl_match_list <- read.table(here("plants/results/lulu/trnl_match_list.txt"))
 
 # TODO: Currently using default parameters
-z <- capture.output(right_lulu <- lulu(right_table_df, right_match_list))
+z <- capture.output(trnl_lulu <- lulu(trnl_table_df, trnl_match_list))
 
-dim(right_lulu$original_table)
-dim(right_lulu$curated_table)
+dim(trnl_lulu$original_table)
+dim(trnl_lulu$curated_table)
 ```
 
 ```{r}
-saveRDS(right_lulu, file=file.path(lulu_dir, "right_lulu.rds"))
+saveRDS(trnl_lulu, file=here("plants/results/lulu/trnl_lulu.rds"))
 ```
 
 
@@ -632,7 +628,7 @@ dir_tree(lulu_dir)
 Save output so it can be loaded in subsequent notebooks.
 
 ```{r}
-save.image(here("cache/02.RData"))
+save.image(here("plants/cache/02.RData"))
 ```
 
 

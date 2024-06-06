@@ -43,10 +43,14 @@ The first thing we'll do is set the directory that stores the workflow outputs.
 ```{r}
 # You can use the here::here function to define a path relative to the project 
 #  directory or use an absolute path
-results_dir <- here::here("results")
+results_dir <- here::here("plants/results")
 
 # Log files will be stored inside the logs directory inside the results directory
 logs_dir <- file.path(results_dir, "logs")
+
+# to metabarcoding workflow directory
+# metawork <- "~/git/metabarcoding_workflow/"
+
 ```
 
 The outputs of this workflow will be stored in:  
@@ -71,6 +75,8 @@ slurm_n_jobs <- 10
 
 We begin by loading the necessary libraries and files.
 
+Note: if you log out then log back in you may get a error with  'fs' to fix it restart the R session and reload the libraries.
+
 ```{r message=FALSE, warning=FALSE}
 suppressPackageStartupMessages({
   library(systemPipeR)
@@ -94,12 +100,6 @@ current_path_env <- Sys.getenv("PATH")
 Sys.setenv(PATH=paste0("/mnt/galaxy/gvl/software/shared_envs/qiime2_2023-07/bin:",
                        current_path_env))
 Sys.setenv(PYTHONPATH="/mnt/galaxy/gvl/software/shared_envs/qiime2_2023-07/lib/python3.8/site-packages/")
-```
-
-```{r}
-# For the mozzie server, the root disk can run out of space, so it's safer to set the tmp directory 
-# to a different location
-Sys.setenv(TMPDIR="/mnt/galaxy/tmp")
 ```
 
 And define some functions (might move this elsewhere...)
@@ -163,7 +163,7 @@ A file containing sample information is required. We'll read in `data/metadata/s
 - `factor`: a factor of interest for your dataset (if you don't have a factor of interest, you can set the values as the same as the sample name)
 
 ```{r}
-samples_df <- read.table(here("data/metadata/samples.tsv"), header=TRUE, stringsAsFactors=FALSE)
+samples_df <- read.table(here("plants/data/metadata/samples.tsv"), header=TRUE, stringsAsFactors=FALSE)
 paged_table(samples_df)
 ```
 
@@ -178,7 +178,7 @@ We also need a file that contains the primers that the metabarcoding project use
 - `primer_rc`: the reverse complement of the primer sequence.
 
 ```{r}
-primers_filename <- here("ref/primers.tsv")
+primers_filename <- here("plants/ref_plant/primers.tsv")
 suppressMessages(
   primers_df <- read_tsv(primers_filename, col_names=c("primer", "primer_seq", "primer_rc"))
 )
@@ -199,7 +199,7 @@ Lastly, we need the group that each primer combination corresponds to. This data
 - `reverse-sequence`: the sequence corresponding to the reverse primer
 
 ```{r}
-metadata_filename <- here("ref/metadata.tsv")
+metadata_filename <- here("plants/ref_plant/metadata.tsv")
 suppressMessages(
   metadata_df <- read_tsv(metadata_filename)
 )
@@ -819,7 +819,7 @@ Plot median quality score for each sample across sequence bases:
 
 ```{r}
 # Max count
-max_count <- 10000
+max_count <- 5000
 for (amplicon_group in amplicon_groups) {
   file_indices <- which(group == amplicon_group)
   group_sample_names <- names(forward_dat[file_indices])
@@ -865,8 +865,8 @@ using [QIIME 2 View](https://view.qiime2.org/), or run the `sequencing_quality_b
 Save output so it can be loaded in subsequent notebooks.
 
 ```{r}
-mkdir(here("cache"))
-save.image(here("cache/01.RData"))
+mkdir(here("plants/cache"))
+save.image(here("plants/cache/01.RData"))
 ```
 
 -----

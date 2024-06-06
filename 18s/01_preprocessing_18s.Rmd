@@ -43,7 +43,7 @@ The first thing we'll do is set the directory that stores the workflow outputs.
 ```{r}
 # You can use the here::here function to define a path relative to the project 
 #  directory or use an absolute path
-results_dir <- here::here("results")
+results_dir <- here::here("18s/results")
 
 # Log files will be stored inside the logs directory inside the results directory
 logs_dir <- file.path(results_dir, "logs")
@@ -70,6 +70,8 @@ slurm_n_jobs <- 10
 # Load libraries and files
 
 We begin by loading the necessary libraries and files.
+
+Note: if you log out then log back in you may get a error with  'fs' to fix it restart the R session and reload the libraries.
 
 ```{r message=FALSE, warning=FALSE}
 suppressPackageStartupMessages({
@@ -157,7 +159,7 @@ A file containing sample information is required. We'll read in `data/metadata/s
 - `factor`: a factor of interest for your dataset (if you don't have a factor of interest, you can set the values as the same as the sample name)
 
 ```{r}
-samples_df <- read.table(here("data/metadata/samples.tsv"), header=TRUE, stringsAsFactors=FALSE)
+samples_df <- read.table(here("18s/data/metadata/samples.tsv"), header=TRUE, stringsAsFactors=FALSE)
 paged_table(samples_df)
 ```
 
@@ -172,7 +174,7 @@ We also need a file that contains the primers that the metabarcoding project use
 - `primer_rc`: the reverse complement of the primer sequence.
 
 ```{r}
-primers_filename <- here("ref/primers.tsv")
+primers_filename <- here("18s/ref_18s/primers.tsv")
 suppressMessages(
   primers_df <- read_tsv(primers_filename, col_names=c("primer", "primer_seq", "primer_rc"))
 )
@@ -193,7 +195,7 @@ Lastly, we need the group that each primer combination corresponds to. This data
 - `reverse-sequence`: the sequence corresponding to the reverse primer
 
 ```{r}
-metadata_filename <- here("ref/metadata.tsv")
+metadata_filename <- here("18s/ref_18s/metadata.tsv")
 suppressMessages(
   metadata_df <- read_tsv(metadata_filename)
 )
@@ -859,8 +861,8 @@ using [QIIME 2 View](https://view.qiime2.org/), or run the `sequencing_quality_b
 Save output so it can be loaded in subsequent notebooks.
 
 ```{r}
-mkdir(here("cache"))
-save.image(here("cache/01.RData"))
+mkdir(here("18s/cache"))
+save.image(here("18s/cache/01.RData"))
 ```
 
 -----
