@@ -187,7 +187,15 @@ if (all(! colnames(all_tables[[1]]) %in% names(sample_id))) {
 
 colnames(all_tables[[l]])
 
+cont_columns <- grepl("Cont", colnames(all_tables[[l]]))
+
+# Subset the data frame to exclude columns with 'Cont' in their names
+filtered_all_table_sample <- all_tables[[l]][, !cont_columns]
+
+
 print(sample_ids)
+
+
 ```
 
 # combining read tables for the short and right amplicons
@@ -306,20 +314,18 @@ write.csv(final_df, file = "~/git/metabarcoding_workflow/results/final_raw_data_
 # have not explored script beyond this point (Mel)
 
 ```{r}
-site_sample <- lapply(, function(x) {
-  if (grepl("\\d", x)) {
+# create a list of values that group all samples from the same site. Only required for the percentage sample set
+site_sample <- lapply(sample_groups, function(x) {
+  if (!grepl("^Cont", x) && grepl("\\d", x)) {
     return(substr(x, start = 3, stop = nchar(x)))
   } else {
     return(x)
   }
-}
+})
 
-if (all(! colnames(all_tables[[1]]) %in% names(sample_id))) {
-  all_tables <- lapply(all_tables, function(x) {
-    colnames(x) <- str_remove(colnames(x), "^X")
-    return(x)
-  })
-}
+# convert kist to dataframe
+site_sample <- do.call(data.frame, site_sample)
+colnames(site_sample) <- gsub("^X", "", colnames(site_sample))
 ```
 
 
@@ -349,25 +355,19 @@ threshold_relative_to_max_sample <- 0.01
 Currently applying filter 1, then filter 2 on the results after filter 1. But can be changed to do both filters independently.
 
 ```{r}
+
 f1_filtered <- list()
 for (l in names(all_tables)) {
   matrix_list <- list()
-  for (g in unique(sample_groups)) {
-    sample_ids <- names(sample_groups)[sample_groups == g]
-    x <- all_tables[[l]][,sample_id]
+  for (g in site_sample) {
+    sample_ids <- names(site_sample)[site_sample == g]
+    x <- all_tables[[l]][,sample_ids]  # Use double square brackets and drop = FALSE
     ok1 <- x > 0
     ok2 <- x >= threshold_absolute
-    # Keep ASVs if they have observations in at least two samples within a replicate group or have 
-    # observations > <threshold_absolute> in one sample. Else, set observations to zero for that ASV
-    # for that group
     ok_asvs <- rowSums(ok1) > 1 | rowSums(ok2) >= 1
-    # Check removed ASVs that are non-zero
-    # print(x[! ok_asvs,][rowSums(x[! ok_asvs,]) > 0,])
-    # Set failed ASVs to zero
-    x[! ok_asvs,] <- 0
+    x[!ok_asvs, ] <- 0
     matrix_list[[g]] <- x
   }
-  names(matrix_list) <- NULL
   f1_filtered[[l]] <- do.call(cbind, matrix_list)
 }
 
@@ -377,6 +377,14 @@ sapply(f1_filtered, dim)
 
 # Check dimensions of non-zero ASVs
 sapply(f1_filtered, function(x) {x[rowSums(x) > 0,] %>% dim})
+
+
+
+l <- "10BNY29042rep1"  # Replace with an actual table name from all_tables
+sample_ids <- c("10BNY29042rep1", "10BNY29042rep2")  # Replace with actual column names
+print(colnames(all_tables[[l]]))
+print(sample_ids)
+x <- all_tables[[l]][, sample_ids, drop = FALSE]
 ```
 
 
