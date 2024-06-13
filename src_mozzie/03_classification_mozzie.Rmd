@@ -109,7 +109,7 @@ lulu_dir <- file.path(results_dir, "lulu")
 
 # Create databases for classification
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 ref_db_dir <- "/mnt/galaxy/home/mecarew/Documents/DNA_reference_db_construction_final_libraries/final_library"
 
 db_coi_ids=list(

@@ -99,6 +99,8 @@ rarefaction_p_steps <- 25
 
 # can't use this until I run the classification step #
 ```{r}
+classification_dir <- file.path(results_dir, "classification/")
+
 targets <- targets %>%
   mutate(classification_output=
            file.path(classification_dir, paste0(amplicon_group, "_classification.qza")),
@@ -246,10 +248,10 @@ for (amplicon_value in AMPLICON) {
     paste(
       "--i-table", paste(output_dir, "dada2", paste0(amplicon_value,"_table.qza"), sep = "/"),
       "--p-min-depth 100",
-      "--p-max-depth 30000",
+      "--p-max-depth 20000",
       "--p-steps 10",
       "--p-metrics 'observed_features'",
-      "--o-visualization", paste(output_dir, "rarefaction", paste0(amplicon_value,"_mult_rarefaction_100_to_30K_by_sample.qzv"), sep = "/"),
+      "--o-visualization", paste(output_dir, "rarefaction", paste0(amplicon_value,"_mult_rarefaction_100_to_20K_by_sample.qzv"), sep = "/"),
       sep = " "
     )
   )
@@ -299,7 +301,7 @@ for (amplicon_value in AMPLICON) {
 ```{r}
 # Define the AMPLICON variable with both values
 AMPLICON <- c("short", "right")
-
+#AMPLICON <- c("right")
 output_dir <- "~/git/metabarcoding_workflow/results/"  # Note: Use proper home directory notation
 
 # Loop over each value in AMPLICON
@@ -308,8 +310,8 @@ for (amplicon_value in AMPLICON) {
   print(amplicon_value)
   
   # Define the input and output paths
-  input_qzv <- paste0(output_dir,"rarefaction/", amplicon_value, "_mult_rarefaction_100_to_30K_by_sample.qzv")
-  output_txt <- paste0(output_dir,"rarefaction/", amplicon_value, "_mult_rarefaction_100_to_30K_by_sample")
+  input_qzv <- paste0(output_dir,"rarefaction/", amplicon_value, "_mult_rarefaction_100_to_20K_by_sample.qzv")
+  output_txt <- paste0(output_dir,"rarefaction/", amplicon_value, "_mult_rarefaction_100_to_20K_by_sample")
   
   # Construct the command to export from .qzv to TXT
   qiime_export_command <- paste(
@@ -489,7 +491,7 @@ ggplot(data = averaged_data2, aes(x = depth, y = avg_ASV_no, group = site_code))
 # create a plot for right amplicon at 100 to 30K reads
 ```{r}
 # import rarefaction data from the '.qzv' file
-right_rf30 <- read_csv("~/git/metabarcoding_workflow/results/rarefaction/right_mult_rarefaction_100_to_30K_by_sample/observed_features.csv")
+right_rf30 <- read_csv("~/git/metabarcoding_workflow/results/rarefaction/right_mult_rarefaction_100_to_20K_by_sample/observed_features.csv")
 
 # modify into a format suitable for ggplot
 right_rf30_table <- right_rf30 %>%

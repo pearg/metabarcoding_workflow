@@ -15,7 +15,7 @@ This final section enables data to be arranged into a final table for future ana
 
 Starting from here will need the thershold list and the sample_df from Cache03
 ```{r}
-#load(here::here("cache/03.RData"))
+load(here::here("results/cache/03.RData"))
 #save(thresholds_list, file = here("cache/thresholds_list.RData"))
 #saveRDS(samples_df, file = here("cache/samples_df.rds"))
 
@@ -207,8 +207,8 @@ print(names_only_in_right_read_tab)
 # write scripts to add a blank column to align data for all amplicons
 ```{r}
 # align data set by adding blank column for columns not present in one amplicon but not the other (Cont3rep1, Cont1rep2). 
-short_read_tab <- mutate(short_read_tab, Cont3rep1 = c(0))
-right_read_tab <- mutate(right_read_tab, Cont1rep2 = c(0))
+#short_read_tab <- mutate(short_read_tab, Cont3rep1 = c(0))
+#right_read_tab <- mutate(right_read_tab, Cont1rep2 = c(0))
 ```
 
 ```{r}
