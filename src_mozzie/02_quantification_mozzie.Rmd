@@ -631,6 +631,20 @@ Save output so it can be loaded in subsequent notebooks.
 save.image(here("results/cache/02.RData"))
 ```
 
+```{r}
+short_curated_otus <- short_lulu$curated_otus
+short_curated_otus_df <- if (!is.data.frame(curated_otus)) {
+  short_curated_otus <- as.data.frame(short_curated_otus)
+}
+right_curated_otus <- right_lulu$curated_otus
+right_curated_otus_df <- if (!is.data.frame(curated_otus)) {
+  right_curated_otus <- as.data.frame(right_curated_otus)
+}
+all_curated_otus <- rbind(right_curated_otus_df, short_curated_otus_df)
+
+write.csv(all_curated_otus, file = here("results/all_curated_asvs_filtered.csv"), row.names = FALSE)
+ 
+```
 
 -----
 # Filtering checks
