@@ -53,7 +53,7 @@ suppressPackageStartupMessages({
 xaringanExtra::use_panelset()
 
 # Load workspace from the previous notebook
-load(here::here("cache/01.RData"))
+load(here::here("results/cache/01.RData"))
 ```
 
 ```{r}
@@ -418,7 +418,7 @@ p_abundance <- "0.00001"
 
 # The minimum portion of samples that a feature must have a relative abundance of at least 
 # `abundance` to be retained
-p_prevalence <- "0.008"
+p_prevalence <- "0.01"
 ```
 
 
@@ -633,6 +633,22 @@ save.image(here("results/cache/02.RData"))
 
 
 -----
+# Filtering checks
+```{r}
+short_curated_otus <- short_lulu$curated_otus
+short_curated_otus_df <- if (!is.data.frame(short_curated_otus)) {
+short_curated_otus <- as.data.frame(curated_otus)
+}
+right_curated_otus <- right_lulu$curated_otus
+right_curated_otus_df <- if (!is.data.frame(curated_otus)) {
+right_curated_otus <- as.data.frame(curated_otus)
+}
+all_curated_otus <- rbind(right_curated_otus_df, short_curated_otus_df)
+names(all_curated_otus)[names(all_curated_otus) == "right_curated_otus"] <- "all_filter_asvs"
+
+write.csv(all_curated_otus, file = here("results/MiSeq16_all_curated_asvs_filtered_01.csv"), row.names = FALSE)
+ 
+```
 
 # Session Info
 

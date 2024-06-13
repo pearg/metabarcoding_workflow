@@ -15,7 +15,7 @@ library(dplyr)
 
 # list files in the folder containing raw data files
 file_names <- list.files("~/git/metabarcoding_workflow/data/raw")
-
+#file_names <- list.files("~/Documents/metabarcoding_workflow/data/raw")
 # create a dataframe with the file names
 sample_list <- data.frame(all_files= file_names)
 
@@ -53,6 +53,9 @@ samples$filename_r1 <- paste0("./data/raw/",samples$filename_r1)
 samples$filename_r2 <- paste0("./data/raw/",samples$filename_r2)
 
 # Write table '.tsv' to analysis directory
+
+#write.table(samples, file = "~/Documents/metabarcoding_workflow/data/metadata/samples.tsv", sep = "\t", row.names = FALSE, quote = FALSE)
+
 write.table(samples, file = "~/git/metabarcoding_workflow/data/metadata/samples.tsv", sep = "\t", row.names = FALSE, quote = FALSE)
 ```
 

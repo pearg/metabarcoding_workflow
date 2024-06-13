@@ -56,7 +56,7 @@ suppressPackageStartupMessages({
 xaringanExtra::use_panelset()
 
 # Load workspace from the previous notebook
-load(here::here("cache/02.RData"))
+load(here::here("results/cache/02.RData"))
 ```
 
 ```{r}

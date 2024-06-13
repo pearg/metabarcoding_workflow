@@ -40,7 +40,7 @@ options(width=120)
 
 ```{r message=FALSE, warning=FALSE}
 # Load workspace from the previous notebook
-load(here::here("cache/02.RData"))
+load(here::here("results/cache/02.RData"))
 
 suppressPackageStartupMessages({
   library(systemPipeR)
