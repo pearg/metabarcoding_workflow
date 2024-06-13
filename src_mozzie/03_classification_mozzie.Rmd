@@ -84,27 +84,7 @@ slurm_threads <- 4
 slurm_resources <- list(partition="main", ntasks=1, ncpus=slurm_threads, memory=8192)
 slurm_n_jobs <- 10
 ```
-# If running files transfered from water-prod
-```{r}
-# You can use the here::here function to define a path relative to the project 
-#  directory or use an absolute path
-results_dir <- here::here("results")
 
-# Log files will be stored inside the logs directory inside the results directory
-logs_dir <- file.path(results_dir, "logs")
-
-# set cwl path
-cwl_path <- here("param/cwl")
-
-# re-set combined, dada2 path
-combined_dir <- file.path(results_dir, "combined")
-dada2_dir <- file.path(results_dir, "dada2")
-demux_dir <- file.path(results_dir, "demux")
-import_data_dir <- file.path(results_dir, "import_data")
-lib_dir <- file.path(results_dir, "lib")
-lulu_dir <- file.path(results_dir, "lulu")
-
-```
 -----
 
 # Create databases for classification
