@@ -370,6 +370,12 @@ dir_tree(classification_dir)
 Process the search results to get % identity match thresholds. Currently we use the top % identity match minus 3 for the threshold of matches to consider, but this can be changed using the `offset` parameter in the `get_thresholds` function.
 
 ```{r}
+# Too large inputs for qiime classification jobs can crash if there's not enough memory. If lots of features, split into multiple files.
+max_features_per_qiime_job <- 1000
+```
+
+
+```{r}
 classification_thresholds_dir <- file.path(results_dir, "classification/thresholds")
 mkdir(classification_thresholds_dir)
 ```
@@ -392,15 +398,46 @@ get_thresholds <- function(file_path, offset=3, max_threshold=80) {
 ```
 
 ```{r}
-write_id_files_for_thresholds <- function(threshold_df, file_path, file_prefix) {
+process_threshold_files <- function(threshold_df, max_features, output_path, output_prefix) {
+  df_output_list <- list()
+  filename_output_list <- list()
+  threshold_list <- list()
   unique_thresholds <- sort(unique(threshold_df$threshold))
-  for (t in unique_thresholds) {
-    output_path <- sprintf("%s/%s_%.03f.txt", file_path, file_prefix, t/100)
-    write.table(threshold_df %>% filter(threshold == t) %>% select(`feature-id`), 
-                file=output_path, quote=FALSE, row.names=FALSE)
+  count <- 1
+  for (i in seq_along(unique_thresholds)) {
+    df <- threshold_df %>% filter(threshold == unique_thresholds[i]) %>% select(`feature-id`)
+    if (nrow(df) <= max_features) {
+      df_output_list[[count]] <- df
+      threshold_list[[count]] <- unique_thresholds[i]
+      filename_output_list[[count]] <- sprintf("%s/%s_%.03f.txt", output_path, output_prefix, unique_thresholds[i]/100)
+      count <- count + 1
+    } else {
+      n_files <- ceiling(nrow(df) / max_features)
+      cuts <- as.numeric(cut(1:nrow(df), breaks=n_files))
+      for (j in 1:n_files) {
+        df_output_list[[count]] <- df[cuts == j,]
+        threshold_list[[count]] <- unique_thresholds[i]
+        filename_output_list[[count]] <- sprintf("%s/%s_%.03f_%d.txt", output_path, output_prefix, unique_thresholds[i]/100, j)
+        count <- count + 1
+      }
+    }
   }
-  file_list <- data.frame(filename=sprintf("%s/%s_%.03f.txt", file_path, file_prefix, unique_thresholds/100),
-                          threshold=unique_thresholds/100)
+  return(list(df_output_list=df_output_list, 
+              thresholds=unlist(threshold_list), 
+              filenames=unlist(filename_output_list))
+  )
+}
+```
+
+
+```{r}
+write_id_files_for_thresholds <- function(x, file_path, file_prefix) {
+  for (i in 1:length(x$df_output_list)) {
+    write.table(x$df_output_list[[i]], file=x$filenames[i], quote=FALSE, row.names=FALSE)
+  }
+  
+  file_list <- data.frame(filename=x$filenames,
+                          threshold=x$thresholds/100)
   write.table(file_list, 
               file=sprintf("%s/%s_files.txt", file_path, file_prefix), 
               quote=FALSE, row.names=FALSE, col.names=FALSE, sep="\t")
@@ -422,8 +459,14 @@ for (amplicon_group in amplicon_groups) {
     prelim_search_filename <- sprintf("%s/%s_vsearch.tsv", classification_prelim_dir, amplicon_group)
   }
   thresholds_list[[amplicon_group]] <- get_thresholds(prelim_search_filename)
-  write_id_files_for_thresholds(thresholds_list[[amplicon_group]], 
-                                file_path=classification_thresholds_dir,
+  
+  files_to_write <- process_threshold_files(threshold_df=thresholds_list[[amplicon_group]],
+                                            max_features=max_features_per_qiime_job, 
+                                            output_path=classification_thresholds_dir, 
+                                            output_prefix=amplicon_group)
+  
+  write_id_files_for_thresholds(files_to_write,
+                                file_path=classification_thresholds_dir, 
                                 file_prefix=amplicon_group)
 }
 ```
