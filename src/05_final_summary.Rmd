@@ -1,0 +1,505 @@
+---
+title: "final_data_summary"
+author: "Jessica Chung /Melissa Carew"
+date: "01/03/2024"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This final section enables data to be arranged into a final table for future analysis.
+
+# producing final data summary
+
+Starting from here will need the thershold list and the sample_df from Cache03
+```{r}
+load(here::here("cache/03.RData"))
+#save(thresholds_list, file = here("cache/thresholds_list.RData"))
+#saveRDS(samples_df, file = here("cache/samples_df.rds"))
+
+# clear Global environment
+#load(here::here("cache/thresholds_list.RData"))
+#load(here::here("cache/samples_df.rds"))
+```
+
+# load results files from previuos steps
+```{r}
+short_lulu <- readRDS(here("results/lulu/short_lulu.rds"))
+right_lulu <- readRDS(here("results/lulu/right_lulu.rds"))
+short_classifications <- read_qza(here("results/classification/short_classification.qza"))
+right_classifications <- read_qza(here("results/classification/right_classification.qza"))
+short_seq <- read_qza(here("results/dada2/short_representative_sequences.qza"))
+right_seq <- read_qza(here("results/dada2/right_representative_sequences.qza"))
+```
+
+# check classification data for short amplicon
+```{r}
+short_classifications$data %>% head(100)
+```
+
+# check classification data for right amplicon
+```{r}
+right_classifications$data %>% head(100)
+```
+
+
+```{r}
+# Pull out table of read counts with LULU filter applied
+short_lulu$curated_table
+
+#short_lulu <- data.frame(short_lulu$curated_table)
+#short_class <- data.frame(short_classifications$data)
+```
+
+
+```{r}
+# Pull out table of read counts with LULU filter applied
+right_lulu$curated_table
+
+#right_lulu <- data.frame(right_lulu$curated_table)
+#right_class <- data.frame(right_classifications$data)
+```
+
+```{r}
+# merge short_classifications with tHersholds
+short_df <- merge(short_classifications$data, thresholds_list[["short"]], by.x="Feature.ID", by.y="feature-id")
+
+right_df <- merge(right_classifications$data, thresholds_list[["right"]], by.x="Feature.ID", by.y="feature-id")
+```
+
+```{r}
+short_seq$data %>% head
+```
+
+```{r}
+right_seq$data %>% head
+```
+
+```{r}
+short_df %>% arrange(desc(max_p_identity)) %>% head(100)
+```
+
+```{r}
+right_df %>% arrange(desc(max_p_identity)) %>% head(100)
+```
+
+```{r}
+table(short_df$Taxon == "Unassigned")
+```
+
+```{r}
+table(right_df$Taxon == "Unassigned")
+```
+
+```{r}
+short_df %>% filter(Taxon == "Unassigned") %>% pull(max_p_identity) %>% table
+```
+
+```{r}
+right_df %>% filter(Taxon == "Unassigned") %>% pull(max_p_identity) %>% table
+```
+
+
+```{r}
+#short_search_results <- read_qza(here("results/classification/preliminary/short_prelim_search_results.qza"))
+
+# for big dataset
+short_search_results <- read_tsv(here("results/classification/preliminary/short_vsearch.tsv"))
+
+```
+
+```{r}
+#short_search_results$data %>% dim
+```
+
+```{r}
+# right_search_results <- read_qza(here("results/classification/preliminary/right_prelim_search_results.qza"))
+
+# for big dataset
+right_search_results <- read_tsv(here("results/classification/preliminary/right_vsearch.tsv"))
+
+```
+
+```{r}
+#right_search_results$data %>% dim
+```
+
+```{r}
+# ncbi_cois <- read.table(db_coi_ids[["short"]], sep="\t")
+# colnames(ncbi_cois) <- c("id", "taxonomy")
+```
+
+
+```{r}
+# short_hits <- merge(short_search_results$data, ncbi_cois, by.x="V2", by.y="id", all.x=TRUE)
+```
+
+## Combine workflow outputs
+
+# fix sample names
+
+This can be changed with future feedback.  
+
+We could use https://docs.qiime2.org/2023.5/plugins/available/feature-table/filter-features-conditionally/
+if we want simple filtering, but if we want to do something complex, better to do it manually.
+
+
+```{r}
+all_tables <- list(
+  short=short_lulu$curated_table,
+  right=right_lulu$curated_table
+)
+```
+
+
+```{r}
+# Get sample names and groups
+sample_groups <- samples_df$factor
+names(sample_groups) <- samples_df$sample_name
+sample_groups
+
+#sample_ids <- samples_df$sample_name
+#sample_ids
+
+```
+
+```{r}
+# Need to rename columns to get rid of the prefix X character if sample names start with a digit
+# Jess original code here...
+if (all(! colnames(all_tables[[1]]) %in% names(sample_groups))) {
+ all_tables <- lapply(all_tables, function(x) {
+  colnames(x) <- str_remove(colnames(x), "^X")
+  return(x)
+ })
+}
+
+colnames(all_tables[[l]])
+
+# changed by Mel sample_groups to sample ID
+if (all(! colnames(all_tables[[1]]) %in% names(sample_id))) {
+  all_tables <- lapply(all_tables, function(x) {
+    colnames(x) <- str_remove(colnames(x), "^X")
+    return(x)
+  })
+}
+
+colnames(all_tables[[l]])
+
+cont_columns <- grepl("Cont", colnames(all_tables[[l]]))
+
+# Subset the data frame to exclude columns with 'Cont' in their names
+filtered_all_table_sample <- all_tables[[l]][, !cont_columns]
+
+
+print(sample_ids)
+
+
+```
+
+# combining read tables for the short and right amplicons
+```{r}
+#make them dataframes
+short_read_tab <- all_tables$short
+right_read_tab <- all_tables$right
+```
+
+```{r}
+# Do the amplicon datasets contain the same number of samples?
+short_read_tab %>% dim
+right_read_tab %>% dim
+
+# are these samples the same for both amplicons?
+if(identical(names(short_read_tab), names(right_read_tab))) {
+  print("Column names match.")
+} else {
+  print("Column names do not match.")
+}
+```
+
+# if column names match skip this step.
+```{r}
+# if they do not match which columns are different?
+names_only_in_short_read_tab <- setdiff(names(short_read_tab), names(right_read_tab))
+print("Column names present only in short_read_tab:")
+print(names_only_in_short_read_tab)
+
+names_only_in_right_read_tab <- setdiff(names(right_read_tab), names(short_read_tab))
+print("Column names present only in right_read_tab:")
+print(names_only_in_right_read_tab)
+```
+
+# write scripts to add a blank column to align data for all amplicons
+```{r}
+# align data set by adding blank column for columns not present in one amplicon but not the other (Cont3rep1, Cont1rep2). 
+short_read_tab <- mutate(short_read_tab, Cont3rep1 = c(0))
+right_read_tab <- mutate(right_read_tab, Cont1rep2 = c(0))
+```
+
+```{r}
+#merge short and right reads tables into one dataframe
+all_read_df <-  rbind(short_read_tab, right_read_tab)
+
+# covert row headers to column and then name column 1
+all_read_df <- rownames_to_column(all_read_df, var = "asv_code")
+```
+
+#Combining read classification tables for the short and right amplicons
+```{r}
+# bind short and right classification data
+all_classif_df <-  rbind(short_df, right_df)
+
+# rename column 1
+colnames(all_classif_df)[1] <- "asv_code"
+
+# join into a singe dataframe
+all_readclass_df <- left_join(all_classif_df, all_read_df, by = "asv_code")
+```
+
+# add in ASV sequence data
+```{r}
+# put sequences in a dataframe
+short_asvseq <- data.frame(short_seq$data)
+right_asvseq <- data.frame(right_seq$data)
+
+# covert row headers to column and then name column 1
+short_asvseq <- rownames_to_column(short_asvseq, var = "asv_code")
+right_asvseq <- rownames_to_column(right_asvseq, var = "asv_code")
+
+# add amplicon information
+short_asvseq  <- mutate(short_asvseq, amplicon = "short")
+right_asvseq <- mutate(right_asvseq, amplicon = "right")
+
+# align column names for merging
+short_asvseq <- short_asvseq %>% rename(asv_seq = short_seq.data)
+right_asvseq <- right_asvseq %>% rename(asv_seq = right_seq.data)
+
+
+# merge data into a single dataframe
+all_asvseq <-  rbind(short_asvseq, right_asvseq)
+```
+
+```{r}
+# merge ALL data into a single dataframe
+final_df <- left_join(all_readclass_df, all_asvseq, by = "asv_code")
+
+# remove columns without data
+final_df <- na.omit(final_df)
+
+final_df$Taxon <- gsub("k__", "", final_df$Taxon)
+final_df$Taxon <- gsub("p__", "", final_df$Taxon)
+final_df$Taxon <- gsub("c__", "", final_df$Taxon)
+final_df$Taxon <- gsub("o__", "", final_df$Taxon)
+final_df$Taxon <- gsub("f__", "", final_df$Taxon)
+final_df$Taxon <- gsub("g__", "", final_df$Taxon)
+final_df$Taxon <- gsub("s__", "", final_df$Taxon)
+
+# place taxonomic data in separate columns
+final_df <- separate(final_df, Taxon, into = c("kingdom", "phylum", "class", "order", "family", "genus","species"), sep = ";",  fill = "right")
+
+# final tidy up (remove 'NA' and X from start of sample names)
+final_df[is.na(final_df)] <- ""
+names(final_df) <- sub("X", "", names(final_df))
+head(final_df)
+
+# save dataframe
+write.csv(final_df, file = "~/git/metabarcoding_workflow/results/final_raw_data_summary4_Mar_24.csv", row.names = FALSE)
+
+```
+
+
+
+
+# have not explored script beyond this point (Mel)
+
+```{r}
+# create a list of values that group all samples from the same site. Only required for the percentage sample set
+site_sample <- lapply(sample_groups, function(x) {
+  if (!grepl("^Cont", x) && grepl("\\d", x)) {
+    return(substr(x, start = 3, stop = nchar(x)))
+  } else {
+    return(x)
+  }
+})
+
+# convert kist to dataframe
+site_sample <- do.call(data.frame, site_sample)
+colnames(site_sample) <- gsub("^X", "", colnames(site_sample))
+```
+
+
+
+```{r}
+# Filter the feature tables. Expect some false positives due to mis-tagging.
+# If an observation is only seen in one replicate and is very low compared to other samples,
+# consider it a false positive and replace the number with a zero
+
+# Filter 1
+# If the number of barcodes for a sample is only seen in one replicate and the number is below
+# <threshold_absolute> observations, then remove it
+threshold_absolute <- 0
+
+# Filter 2
+# Using the samples that have the largest observation of the barcode, take the average number
+# from all its replicates. If the barcode is only seen in one replicate of another sample,
+# if the number of barcodes is less than <threshold_relative_to_max_sample> * max_average, 
+# remove it
+# e.g. For barcode 1, if sample A has 3 replicates with (0, 0, 4) observations, and sample B has 3
+# observations (500, 550, 450). The average of sample B is 500. If <threshold_relative_to_max_sample>
+# is set to 0.01, the threshold is 5. Since sample A's single observation is less than 5, the
+# observation will be removed
+threshold_relative_to_max_sample <- 0.01
+```
+
+Currently applying filter 1, then filter 2 on the results after filter 1. But can be changed to do both filters independently.
+
+```{r}
+
+f1_filtered <- list()
+for (l in names(all_tables)) {
+  matrix_list <- list()
+  for (g in site_sample) {
+    sample_ids <- names(site_sample)[site_sample == g]
+    x <- all_tables[[l]][,sample_ids]  # Use double square brackets and drop = FALSE
+    ok1 <- x > 0
+    ok2 <- x >= threshold_absolute
+    ok_asvs <- rowSums(ok1) > 1 | rowSums(ok2) >= 1
+    x[!ok_asvs, ] <- 0
+    matrix_list[[g]] <- x
+  }
+  f1_filtered[[l]] <- do.call(cbind, matrix_list)
+}
+
+
+# Check dimensions
+sapply(f1_filtered, dim)
+
+# Check dimensions of non-zero ASVs
+sapply(f1_filtered, function(x) {x[rowSums(x) > 0,] %>% dim})
+
+
+
+l <- "10BNY29042rep1"  # Replace with an actual table name from all_tables
+sample_ids <- c("10BNY29042rep1", "10BNY29042rep2")  # Replace with actual column names
+print(colnames(all_tables[[l]]))
+print(sample_ids)
+x <- all_tables[[l]][, sample_ids, drop = FALSE]
+```
+
+
+
+```{r}
+f1_filtered <- list()
+
+for (l in names(all_tables)) {
+  matrix_list <- list()
+  
+  for (g in unique(sample_groups)) {
+    sample_ids <- names(sample_groups)[sample_groups == g]
+    
+    # Check if sample_ids are present in short
+    if (all(sample_ids %in% colnames(short))) {
+      x <- all_tables[[l]][ , colnames(all_tables[[l]]) %in% sample_ids]
+      
+      ok1 <- x > 0
+      ok2 <- x >= threshold_absolute
+      
+      # Keep ASVs if they have observations in at least two samples within a replicate group or have 
+      # observations > <threshold_absolute> in one sample. Else, set observations to zero for that ASV
+      # for that group
+      ok_asvs <- rowSums(ok1) > 1 | rowSums(ok2) >= 1
+      
+      # Set failed ASVs to zero
+      x[!ok_asvs, ] <- 0
+      matrix_list[[g]] <- x
+    } else {
+      # Print the problematic sample_ids and the columns in short
+      print(paste("Sample IDs not found in short for", l, ":"))
+      print(sample_ids)
+      print("Columns in short:")
+      print(colnames(short))
+      
+      # Handle case where sample_ids are not found in short
+      warning(paste("Sample IDs", paste(sample_ids, collapse = ", "), "not found in short for", l))
+    }
+  }
+  
+  # Combine the matrices in matrix_list by columns
+  names(matrix_list) <- NULL
+  f1_filtered[[l]] <- do.call(cbind, matrix_list)
+}
+
+```
+
+
+```{r}
+f2_filtered <- list()
+for (l in names(all_tables)) {
+  matrix_list <- list()
+  # First get mean observations for each sample group
+  mean_list <- list()
+  for (g in unique(sample_groups)) {
+    sample_ids <- names(sample_groups)[sample_groups == g]
+    x <- f1_filtered[[l]][,sample_ids]
+    mean_list[[g]] <- rowMeans(f1_filtered[[l]][,sample_ids])
+  }
+  
+  # Get the max mean observation for each ASV
+  max_mean_obs <- do.call(cbind, mean_list) %>% apply(1, max)
+  
+  # Get the threshold
+  f2_threshold <- max_mean_obs * threshold_relative_to_max_sample
+  
+  # If there's only a single observation in the sample group and that observation is 
+  # less than <f2_threshold>, set observations to zero for that ASV in the group
+  for (g in unique(sample_groups)) {
+    sample_ids <- names(sample_groups)[sample_groups == g]
+    x <- f1_filtered[[l]][,sample_ids]
+    ok1 <- x > 0
+    ok2 <- x >= f2_threshold
+    ok_asvs <- rowSums(ok1) > 1 | rowSums(ok2) >= 1
+    # Check removed ASVs that are non-zero
+    # print(x[! ok_asvs,][rowSums(x[! ok_asvs,]) > 0,])
+    # Set failed ASVs to zero
+    x[! ok_asvs,] <- 0
+    matrix_list[[g]] <- x
+  }
+  names(matrix_list) <- NULL
+  f2_filtered[[l]] <- do.call(cbind, matrix_list)
+}
+
+# Check dimensions
+sapply(f2_filtered, dim)
+
+# Check dimensions of non-zero ASVs
+sapply(f2_filtered, function(x) {x[rowSums(x) > 0,] %>% dim})
+```
+
+
+
+
+
+
+```{r}
+# Sanity check ASVs that changed
+diff <- lapply(names(all_tables), function(l) {
+  diff <- rowMeans(all_tables[[l]] == f2_filtered[[l]]) != 1
+  names(diff)[diff]
+})
+
+# e.g.
+all_tables[[1]][diff[[1]],]
+f2_filtered[[1]][diff[[1]],]
+```
+
+
+
+# Truncate Taxonomy?
+
+```
+Generally, any DNA barcode sequence match to the above 97% would be considered a species level match. At present, I truncate matches of >96%->95% to genus, <95% to >92% to family
+```
+
+
+

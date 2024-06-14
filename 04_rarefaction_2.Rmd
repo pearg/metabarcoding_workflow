@@ -1,0 +1,645 @@
+---
+title: "Metabarcoding Rarefaction"
+description: |
+  A QIIME2-based metabarcoding workflow. Part 3.
+author:
+  - name: Your Name Here
+    url: https://example.com/
+    affiliation: Example Organisation
+    affiliation_url: https://example.com/
+    orcid_id: 0000-0000-0000-0000
+  - name: Jessica Chung
+    url: https://github.com/jessicachung
+    affiliation: Melbourne Bioinformatics, PEARG
+date: "`r Sys.Date()`"
+output: 
+  distill::distill_article:
+    toc: true
+    toc_depth: 4
+    df_print: paged
+    code_folding: true
+    highlight: haddock
+    highlight_downlit: false
+    css: "custom.css"
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning=TRUE, message=TRUE, error=TRUE, echo=TRUE, results="hold")
+knitr::opts_knit$set(root.dir = "..")
+options(digits=4)
+options(width=120)
+```
+
+
+< #TODO: Write documentation about the workflow >
+
+
+# Load
+
+```{r message=FALSE, warning=FALSE}
+# Load workspace from the previous notebook
+load(here::here("cache/02.RData"))
+
+suppressPackageStartupMessages({
+  library(systemPipeR, lib.loc = "/home/unimelb.edu.au/jessicac/R/x86_64-pc-linux-gnu-library/4.3")
+  library(tidyverse)
+  library(here)
+  library(patchwork)
+  library(rmarkdown)
+  library(fs)
+  library(qiime2R)
+})
+
+xaringanExtra::use_panelset()
+```
+
+```{r}
+# Append qiime2 path to PATH
+current_path_env <- Sys.getenv("PATH")
+
+Sys.setenv(PATH=paste0("/home/unimelb.edu.au/jessicac/shared_envs/qiime2-2024.2/bin:/home/unimelb.edu.au/jessicac/miniconda3/condabin:", current_path_env))
+```
+
+-----
+
+# Rarefaction (WIP)
+
+
+
+```{r}
+rarefaction_dir <- file.path(results_dir, "rarefaction")
+mkdir(rarefaction_dir)
+
+# Setup targets
+targets <- data.frame(FileName=extract_targets(dada2, "seq_output"),
+                      SampleName=extract_targets(dada2, "SampleName"),
+                      amplicon_group=extract_targets(dada2, "amplicon_group"),
+                      table_qza=extract_targets(dada2, "table_output"))
+```
+
+```{r}
+# Rarefaction parameters
+# Rarefaction is very sample dependent and depends on sequencing depth
+# When you run a new set of parameters, new outputs will be created
+# Re-iterate until you get a set of min-depth to max-depth you're happy with
+
+# One set of parameters for all samples
+
+rarefaction_min_depth <- 100
+rarefaction_max_depth <- 30000
+rarefaction_p_steps <- 25
+```
+
+# can't use this until I run the classification step
+```{r}
+targets <- targets %>%
+  mutate(classification_output=
+           file.path(classification_dir, paste0(amplicon_group, "_classification.qza")),
+         tabulation_output=
+           file.path(dada2_dir, paste0(amplicon_group, "_classification.qzv"))
+  )
+
+classification_targets <- here("tmp/rarefaction_targets.txt")
+
+# # WIP: For the moment, only run the short amplicions
+write_targets(targets %>% head(1), file=classification_targets)
+```
+
+
+::::: {.panelset}
+
+::: {.panel}
+
+#### Run output {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+dada2 <- loadWorkflow(targets=dada2_targets, wf_file="qiime_dada2.cwl", 
+    input_file="qiime_dada2.yml", dir_path=cwl_path)
+dada2 <- set_logs_dir(dada2, logs_dir)
+dada2 <- renderWF(dada2, inputvars=c(FileName="_INPUT_PATH_",
+                                     forward_trunc_length="_FORWARD_TRUNC_",
+                                     reverse_trunc_length="_REVERSE_TRUNC_",
+                                     stats_output="_STATS_PATH_",
+                                     seq_output="_SEQ_PATH_",
+                                     table_output="_TABLE_PATH_"))
+run_jobs(dada2)
+```
+
+
+:::
+
+::: {.panel}
+
+#### Command list {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+# Print commands that were run
+cmdlist(dada2)
+```
+
+:::
+
+::: {.panel}
+
+#### Output directory files {.panel-name}
+
+```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
+# List files in output directory
+dir_tree(dada2_dir)
+```
+
+:::
+
+::::
+
+
+
+This step is kinda manual with setting min/max depth size... Dunno how best to handle
+
+for AMPLICON in short right; do
+    echo ${AMPLICON}
+    qiime diversity alpha-rarefaction \
+        --i-table data/feature_tables/${AMPLICON}_table.qza \
+        --p-min-depth 2000 \
+        --p-max-depth 37000 \
+        --p-steps 25 \
+        --p-metrics 'observed_features' \
+        --o-visualization data/rarefaction/${AMPLICON}_mult_rarefaction_2k_to_37K_by_sample.qzv
+done
+
+for AMPLICON in short right; do
+    echo ${AMPLICON}
+    qiime diversity alpha-rarefaction \
+        --i-table ~/git/metabarcoding_workflow/results/dada2/${AMPLICON}_table.qza \
+        --p-min-depth 2000 \
+        --p-max-depth 10000 \
+        --p-steps 25 \
+        --p-metrics 'observed_features' \
+        --o-visualization ~/git/metabarcoding_workflow/results/rarefaction/${AMPLICON}_mult_rarefaction_2k_to_10K_by_sample.qzv
+        
+done
+
+# Mel working attempts produce rarefaction plots for sites and samples 
+```{r}
+# Define the AMPLICON variable with both values
+AMPLICON <- c("short", "right")
+
+output_dir <- "~/git/metabarcoding_workflow/results"
+
+# Loop over each value in AMPLICON
+for (amplicon_value in AMPLICON) {
+  # Print the current AMPLICON value
+  print(amplicon_value)
+  
+
+  # Construct the command for qiime diversity alpha-rarefaction
+  qiime_command <- paste(
+    "qiime diversity alpha-rarefaction",
+    paste(
+      "--i-table", paste(output_dir, "dada2", paste0(amplicon_value,"_table.qza"), sep = "/"),
+      "--p-min-depth 20",
+      "--p-max-depth 10000",
+      "--p-steps 25",
+      "--p-metrics 'observed_features'",
+      "--o-visualization", paste(output_dir, "rarefaction", paste0(amplicon_value,"_mult_rarefaction_20_to_10K_by_sample.qzv"), sep = "/"),
+      sep = " "
+    )
+  )
+  
+  # Run the constructed command using system()
+  system(qiime_command)
+}
+
+```
+```{r}
+# Define the AMPLICON variable with both values
+AMPLICON <- c("short", "right")
+
+output_dir <- "~/git/metabarcoding_workflow/results"
+
+# Loop over each value in AMPLICON
+for (amplicon_value in AMPLICON) {
+  # Print the current AMPLICON value
+  print(amplicon_value)
+  
+
+  # Construct the command for qiime diversity alpha-rarefaction
+  qiime_command <- paste(
+    "qiime diversity alpha-rarefaction",
+    paste(
+      "--i-table", paste(output_dir, "dada2", paste0(amplicon_value,"_table.qza"), sep = "/"),
+      "--p-min-depth 100",
+      "--p-max-depth 30000",
+      "--p-steps 25",
+      "--p-metrics 'observed_features'",
+      "--o-visualization", paste(output_dir, "rarefaction", paste0(amplicon_value,"_mult_rarefaction_100_to_30K_by_sample.qzv"), sep = "/"),
+      sep = " "
+    )
+  )
+  
+  # Run the constructed command using system()
+  system(qiime_command)
+}
+
+```
+# extract rarefaction 'qzv' data
+```{r}
+
+# Define the AMPLICON variable with both values
+AMPLICON <- c("short", "right")
+
+output_dir <- "~/git/metabarcoding_workflow/results/"  # Note: Use proper home directory notation
+
+# Loop over each value in AMPLICON
+for (amplicon_value in AMPLICON) {
+  # Print the current AMPLICON value
+  print(amplicon_value)
+  
+  # Define the input and output paths
+  input_qzv <- paste0(output_dir,"rarefaction/", amplicon_value, "_mult_rarefaction_20_to_10K_by_sample.qzv")
+  output_txt <- paste0(output_dir,"rarefaction/", amplicon_value, "_mult_rarefaction_20_to_10K_by_sample")
+  
+  # Construct the command to export from .qzv to TXT
+  qiime_export_command <- paste(
+    "qiime tools export --input-path", input_qzv,
+    "--output-path", output_txt, sep = " "
+    
+    #paste(output_dir, "rarefaction/", amplicon_value),
+   
+  )
+  
+  # Run the export command using system()
+  system(qiime_export_command)
+  
+  # Rename the exported TXT file to match the desired output name
+  #file.rename(paste0(output_txt, "data.txt"), output_txt)
+}
+```
+
+# extract rarefaction 'qzv' data
+```{r}
+
+# Define the AMPLICON variable with both values
+AMPLICON <- c("short", "right")
+
+output_dir <- "~/git/metabarcoding_workflow/results/"  # Note: Use proper home directory notation
+
+# Loop over each value in AMPLICON
+for (amplicon_value in AMPLICON) {
+  # Print the current AMPLICON value
+  print(amplicon_value)
+  
+  # Define the input and output paths
+  input_qzv <- paste0(output_dir,"rarefaction/", amplicon_value, "_mult_rarefaction_100_to_30K_by_sample.qzv")
+  output_txt <- paste0(output_dir,"rarefaction/", amplicon_value, "_mult_rarefaction_100_to_30K_by_sample")
+  
+  # Construct the command to export from .qzv to TXT
+  qiime_export_command <- paste(
+    "qiime tools export --input-path", input_qzv,
+    "--output-path", output_txt, sep = " "
+    
+    #paste(output_dir, "rarefaction/", amplicon_value),
+   
+  )
+  
+  # Run the export command using system()
+  system(qiime_export_command)
+  
+  # Rename the exported TXT file to match the desired output name
+  #file.rename(paste0(output_txt, "data.txt"), output_txt)
+}
+```
+# right amplicon 20 to 10K
+```{r}
+# import rarefaction data from the '.qzv' file
+right_rf <- read_csv("~/git/metabarcoding_workflow/results/rarefaction/right_mult_rarefaction_20_to_10K_by_sample/observed_features.csv")
+
+# modify into a format suitable for ggplot
+right_rf_table <- right_rf %>%
+  gather(key = "depth/interation", value = "ASV_no", -`sample-id`)
+
+right_rf_table <- right_rf_table %>%
+  separate(`depth/interation`, into = c("depth", "iteration"), sep = "_")
+
+right_rf_table <- right_rf_table %>%
+  mutate(depth = str_replace(depth, "depth-", "")) %>%
+mutate(iteration = str_replace(iteration, "iter-", "")) %>% mutate(depth = as.numeric(depth)) %>% mutate(iteration = as.numeric(iteration))
+
+colnames(right_rf_table)[1] <- "sample_id"
+
+right_rf_table <- right_rf_table %>%
+   mutate(new_sample_id = str_replace_all(sample_id, c("rep1" = "", "rep2" = "", "rep3" = "")))
+
+colnames(right_rf_table)[5] <- "site_code"
+
+
+# plot data using the average for each group of 10 iterations
+right_rf_table_av <- right_rf_table %>%
+  group_by(sample_id, depth, iteration) %>%
+  summarise(avg_ASV_no = mean(ASV_no, na.rm = TRUE))
+
+# get averages of all sample replicates
+right_rf_table_av <- right_rf_table %>%
+  group_by(sample_id, depth) %>%
+  summarise(avg_ASV_no = mean(ASV_no, na.rm = TRUE))
+
+# alpha rarefraction plot of data for right amplicon at of sequencing depth of upto 10K (in colour)
+ggplot(data = right_rf_table_av, aes(x = depth, y = avg_ASV_no, group = sample_id, color = sample_id)) +
+  geom_line(show.legend = FALSE) +
+  labs(title = "right amplicon alpha rarefraction at 10K sequencing depth",
+       x = "sequencing depth",
+       y = "number of ASVs",
+       color = "Sample ID") +
+  theme_minimal()
+
+
+# alpha rarefraction plot of data for right amplicon at of sequencing depth of upto 10K (in black)
+ggplot(data = right_rf_table_av, aes(x = depth, y = avg_ASV_no, group = sample_id)) +
+  #geom_line(show.legend = FALSE) +
+  geom_smooth(se = FALSE, color = "black", size = 0.5) +  # Add a smooth line without standard error bands
+  labs(title = "right amplicon alpha rarefraction at 10K sequencing depth",
+       x = "sequencing depth",
+       y = "number of ASVs") +
+  theme_minimal()
+```
+
+
+```{r}
+# get averages of the by site
+averaged_data2 <- right_rf_table %>%
+  group_by(site_code, depth) %>%
+  summarise(avg_ASV_no = mean(ASV_no, na.rm = TRUE))
+
+# in colour 
+ggplot(data = averaged_data2, aes(x = depth, y = avg_ASV_no, group = site_code, color = site_code)) +
+  geom_line(show.legend = FALSE) +
+  labs(title = "right amplicon per site alpha rarefraction at 10K sequencing depth",
+       x = "sequencing depth",
+       y = "number of ASVs",
+       color = "Sample ID") +
+  theme_minimal()
+
+# in black
+ggplot(data = averaged_data2, aes(x = depth, y = avg_ASV_no, group = site_code)) +
+  geom_line(show.legend = FALSE) +
+  labs(title = "Right Amplicon per Site Alpha Rarefaction at 10K Sequencing Depth",
+       x = "Sequencing Depth",
+       y = "Number of ASVs") +
+  theme_minimal()
+```
+#For the short amplicon at 20 to 10K reads
+```{r}
+# import rarefaction data from the '.qzv' file
+short_rf <- read_csv("~/git/metabarcoding_workflow/results/rarefaction/short_mult_rarefaction_20_to_10K_by_sample/observed_features.csv")
+
+# modify into a format suitable for ggplot
+short_rf_table <- short_rf %>%
+  gather(key = "depth/interation", value = "ASV_no", -`sample-id`)
+
+short_rf_table <- short_rf_table %>%
+  separate(`depth/interation`, into = c("depth", "iteration"), sep = "_")
+
+short_rf_table <- short_rf_table %>%
+  mutate(depth = str_replace(depth, "depth-", "")) %>%
+mutate(iteration = str_replace(iteration, "iter-", "")) %>% mutate(depth = as.numeric(depth)) %>% mutate(iteration = as.numeric(iteration))
+
+colnames(short_rf_table)[1] <- "sample_id"
+
+short_rf_table <- short_rf_table %>%
+   mutate(new_sample_id = str_replace_all(sample_id, c("rep1" = "", "rep2" = "", "rep3" = "")))
+
+colnames(short_rf_table)[5] <- "site_code"
+
+
+# plot data using the average for each group of 10 iterations
+short_rf_table_av <- short_rf30_table %>%
+  group_by(sample_id, depth, iteration) %>%
+  summarise(avg_ASV_no = mean(ASV_no, na.rm = TRUE))
+
+# get averages of all sample replicates
+short_rf30_table_av <- short_rf30_table %>%
+  group_by(sample_id, depth) %>%
+  summarise(avg_ASV_no = mean(ASV_no, na.rm = TRUE))
+
+# alpha rarefraction plot of data for short amplicon at of sequencing depth of upto 10K
+ggplot(data = short_rf30_table_av, aes(x = depth, y = avg_ASV_no, group = sample_id, color = sample_id)) +
+  geom_line(show.legend = FALSE) +
+  labs(title = "short amplicon alpha rarefraction at 10K sequencing depth",
+       x = "sequencing depth",
+       y = "number of ASVs",
+       color = "Sample ID") +
+  theme_minimal()
+```
+
+#For the short amplicon at 20 to 10K reads
+```{r}
+# import rarefaction data from the '.qzv' file
+short_rf30 <- read_csv("~/git/metabarcoding_workflow/results/rarefaction/short_mult_rarefaction_100_to_30K_by_sample/observed_features.csv")
+
+# modify into a format suitable for ggplot
+short_rf30_table <- short_rf30 %>%
+  gather(key = "depth/interation", value = "ASV_no", -`sample-id`)
+
+short_rf30_table <- short_rf30_table %>%
+  separate(`depth/interation`, into = c("depth", "iteration"), sep = "_")
+
+short_rf30_table <- short_rf30_table %>%
+  mutate(depth = str_replace(depth, "depth-", "")) %>%
+mutate(iteration = str_replace(iteration, "iter-", "")) %>% mutate(depth = as.numeric(depth)) %>% mutate(iteration = as.numeric(iteration))
+
+colnames(short_rf30_table)[1] <- "sample_id"
+
+short_rf30_table <- short_rf30_table %>%
+   mutate(new_sample_id = str_replace_all(sample_id, c("rep1" = "", "rep2" = "", "rep3" = "")))
+
+colnames(short_rf30_table)[5] <- "site_code"
+
+
+# plot data using the average for each group of 10 iterations
+short_rf30_table_av <- short_rf30_table %>%
+  group_by(sample_id, depth, iteration) %>%
+  summarise(avg_ASV_no = mean(ASV_no, na.rm = TRUE))
+
+# get averages of all sample replicates
+short_rf30_table_av <- short_rf30_table %>%
+  group_by(sample_id, depth) %>%
+  summarise(avg_ASV_no = mean(ASV_no, na.rm = TRUE))
+
+# alpha rarefraction plot of data for short amplicon at of sequencing depth of upto 10K
+ggplot(data = short_rf30_table_av, aes(x = depth, y = avg_ASV_no, group = sample_id, color = sample_id)) +
+  geom_line(show.legend = FALSE) +
+  labs(title = "short amplicon alpha rarefraction at 10K sequencing depth",
+       x = "sequencing depth",
+       y = "number of ASVs",
+       color = "Sample ID") +
+  theme_minimal()
+```
+
+
+
+-----
+
+# Save output
+
+Save output so it can be loaded in subsequent notebooks.
+
+```{r}
+# save.image(here("cache/04.RData"))
+```
+
+-----
+
+# Session Info
+
+```{r}
+if (nzchar(system.file(package="devtools"))) {
+  devtools::session_info()
+} else {
+  sessionInfo()
+}
+```
+
+```{r}
+
+##WORKS####
+# Define the AMPLICON variable with both values
+AMPLICON <- c("short", "right")
+
+output_dir <- "~/git/metabarcoding_workflow/results"
+
+# Loop over each value in AMPLICON
+for (amplicon_value in AMPLICON) {
+  # Print the current AMPLICON value
+  print(amplicon_value)
+  
+
+  # Construct the command for qiime diversity alpha-rarefaction
+  qiime_command <- paste(
+    "qiime diversity alpha-rarefaction",
+    paste(
+      "--i-table", paste(output_dir, "dada2", paste0(amplicon_value,"_table.qza"), sep = "/"),
+      "--p-min-depth 20",
+      "--p-max-depth 10000",
+      "--p-steps 25",
+      "--p-metrics 'observed_features'",
+      "--o-visualization", paste(output_dir, "rarefaction", paste0(amplicon_value,"_mult_rarefaction_20_to_10K_by_sample.qzv"), sep = "/"),
+      sep = " "
+    )
+  )
+  
+  # Run the constructed command using system()
+  system(qiime_command)
+}
+
+```
+
+```{r}
+##WORKS####
+
+# Define the AMPLICON variable with both values
+AMPLICON <- c("short", "right")
+
+output_dir <- "~/git/metabarcoding_workflow/results/"  # Note: Use proper home directory notation
+
+# Loop over each value in AMPLICON
+for (amplicon_value in AMPLICON) {
+  # Print the current AMPLICON value
+  print(amplicon_value)
+  
+  # Define the input and output paths
+  input_qzv <- paste0(output_dir,"rarefaction/", amplicon_value, "_mult_rarefaction_20_to_10K_by_sample.qzv")
+  output_txt <- paste0(output_dir,"rarefaction/", amplicon_value, "_mult_rarefaction_20_to_10K_by_sample")
+  
+  # Construct the command to export from .qzv to TXT
+  qiime_export_command <- paste(
+    "qiime tools export --input-path", input_qzv,
+    "--output-path", output_txt, sep = " "
+    
+    #paste(output_dir, "rarefaction/", amplicon_value),
+   
+  )
+  
+  # Run the export command using system()
+  system(qiime_export_command)
+  
+  # Rename the exported TXT file to match the desired output name
+  #file.rename(paste0(output_txt, "data.txt"), output_txt)
+}
+```
+
+```{r}
+# import rarefaction data from the '.qzv' file
+right_rf <- read_csv("~/git/metabarcoding_workflow/results/rarefaction/right_mult_rarefaction_20_to_10K_by_sample/observed_features.csv")
+
+# modify into a format suitable for ggplot
+right_rf_table <- right_rf %>%
+  gather(key = "depth/interation", value = "ASV_no", -`sample-id`)
+
+right_rf_table <- right_rf_table %>%
+  separate(`depth/interation`, into = c("depth", "iteration"), sep = "_")
+
+right_rf_table <- right_rf_table %>%
+  mutate(depth = str_replace(depth, "depth-", "")) %>%
+mutate(iteration = str_replace(iteration, "iter-", "")) %>% mutate(depth = as.numeric(depth)) %>% mutate(iteration = as.numeric(iteration))
+
+colnames(right_rf_table)[1] <- "sample_id"
+
+right_rf_table <- right_rf_table %>%
+   mutate(new_sample_id = str_replace_all(sample_id, c("rep1" = "", "rep2" = "", "rep3" = "")))
+
+colnames(right_rf_table)[5] <- "site_code"
+
+
+# plot data using the average for each group of 10 iterations
+averaged_data <- right_rf_table %>%
+  group_by(sample_id, depth, iteration) %>%
+  summarise(avg_ASV_no = mean(ASV_no, na.rm = TRUE))
+
+# get averages of all sample replicates
+averaged_data <- right_rf_table %>%
+  group_by(sample_id, depth) %>%
+  summarise(avg_ASV_no = mean(ASV_no, na.rm = TRUE))
+
+# alpha rarefraction plot of data for right amplicon at of sequencing depth of upto 10K
+ggplot(data = averaged_data, aes(x = depth, y = avg_ASV_no, group = sample_id, color = sample_id)) +
+  geom_line(show.legend = FALSE) +
+  labs(title = "right amplicon alpha rarefraction at 10K sequencing depth",
+       x = "sequencing depth",
+       y = "number of ASVs",
+       color = "Sample ID") +
+  theme_minimal()
+```
+
+
+```{r}
+# get averages of the by site
+averaged_data2 <- right_rf_table %>%
+  group_by(site_code, depth) %>%
+  summarise(avg_ASV_no = mean(ASV_no, na.rm = TRUE))
+
+
+ggplot(data = averaged_data2, aes(x = depth, y = avg_ASV_no, group = site_code, color = site_code)) +
+  geom_line(show.legend = FALSE) +
+  labs(title = "right amplicon per site alpha rarefraction at 10K sequencing depth",
+       x = "sequencing depth",
+       y = "number of ASVs",
+       color = "Sample ID") +
+  theme_minimal()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

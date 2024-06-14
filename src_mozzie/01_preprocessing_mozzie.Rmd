@@ -71,6 +71,8 @@ slurm_n_jobs <- 10
 
 We begin by loading the necessary libraries and files.
 
+Note: if you log out then log back in you may get a error with  'fs' to fix it restart the R session and reload the libraries.
+
 ```{r message=FALSE, warning=FALSE}
 suppressPackageStartupMessages({
   library(systemPipeR)
@@ -94,12 +96,6 @@ current_path_env <- Sys.getenv("PATH")
 Sys.setenv(PATH=paste0("/mnt/galaxy/gvl/software/shared_envs/qiime2_2023-07/bin:",
                        current_path_env))
 Sys.setenv(PYTHONPATH="/mnt/galaxy/gvl/software/shared_envs/qiime2_2023-07/lib/python3.8/site-packages/")
-```
-
-```{r}
-# For the mozzie server, the root disk can run out of space, so it's safer to set the tmp directory 
-# to a different location
-Sys.setenv(TMPDIR="/mnt/galaxy/tmp")
 ```
 
 And define some functions (might move this elsewhere...)
@@ -865,8 +861,8 @@ using [QIIME 2 View](https://view.qiime2.org/), or run the `sequencing_quality_b
 Save output so it can be loaded in subsequent notebooks.
 
 ```{r}
-mkdir(here("cache"))
-save.image(here("cache/01.RData"))
+mkdir(here("results/cache"))
+save.image(here("results/cache/01.RData"))
 ```
 
 -----

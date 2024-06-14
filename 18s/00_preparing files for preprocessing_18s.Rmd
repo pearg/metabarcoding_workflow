@@ -1,0 +1,63 @@
+---
+title: "setting up for preprocessing"
+output: html_document
+---
+
+# Preparation for running bioinformatic pipeline
+1.    Clone a copy of the workflow from the PEARG github repository https://github.com/pearg/metabarcoding_workflow into your server directory (for this I have set up a directory called 'git' for cloned repositories). You'll need a github account to do this (see - https://docs.github.com/en/get-started/onboarding/getting-started-with-your-github-account).
+
+2.    Transefer datafiles onto server into folder in data directory
+ All files for analysis should be copied into the directory ~/git/metabarcoding_workflow/data/raw. Files can be transferred using file transfer software like 'FileZilla
+ 
+3.    Format a sample.tsv file using the script below. This will be required to run the 01_preprocessing.
+```{r}
+library(dplyr)
+
+# list files in the folder containing raw data files
+file_names <- list.files("~/git/metabarcoding_workflow/18s/data/raw")
+
+# create a dataframe with the file names
+sample_list <- data.frame(all_files= file_names)
+
+# split columns for R1 and R2 files
+samples <- sample_list %>%
+  dplyr::mutate(
+    filename_r1  = ifelse(grepl("_R2", all_files), all_files, NA),
+    filename_r2 = ifelse(grepl("_R1", all_files), all_files, NA)
+  )
+
+samples$filename_r1 <- ifelse(is.na(samples$filename_r1), sample_list$all_files, NA)
+samples$filename_r2 <- ifelse(is.na(samples$filename_r2), sample_list$all_files, NA)
+
+# remove 'all_files' column
+samples <- samples[, -which(names(samples) == "all_files")]
+
+# remove gaps
+samples$filename_r1 <- na.omit(samples$filename_r1)
+samples$filename_r2 <- na.omit(samples$filename_r2)
+
+# remove duplicates
+samples <- unique(samples)
+
+# add 'sample names' column
+samples$sample_name <- substr(samples$filename_r1, 1, regexpr("_", samples$filename_r1) - 1)
+
+# add 'factor' column
+samples$factor <- substr(samples$sample_name, 1, nchar(samples$sample_name))
+# remove replicate data
+samples <- samples %>%
+   dplyr::mutate(factor = sub("(rep1|rep2|rep3|rep4|rep5|rep6)$", "", factor))
+
+# Add "./data/raw/" to the beginning of the "File_Name" column
+samples$filename_r1 <- paste0("./18s/data/raw/",samples$filename_r1)
+samples$filename_r2 <- paste0("./18s/data/raw/",samples$filename_r2)
+
+# Write table '.tsv' to analysis directory
+write.table(samples, file = "~/git/metabarcoding_workflow/18s/data/metadata/samples.tsv", sep = "\t", row.names = FALSE, quote = FALSE)
+```
+
+# Some more on using github (if you haven't before)
+Git can be added to the top rigth pane of your rstudio window using the instrutions below:
+
+Configure Git in RStudio:
+Open RStudio and go to the "Tools" menu. Choose "Global Options" and then click on the "Git/SVN" tab. Here, you need to specify the path to the Git executable. If Git is installed in the default location, RStudio should automatically detect it. Otherwise, you may need to browse and select the Git executable manually.
