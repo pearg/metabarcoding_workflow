@@ -1,0 +1,66 @@
+---
+title: "checking_classifcation"
+author: "Melissa Carew"
+date: "17/06/2024"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+its2prelclass_df <- read.table("~/git/metabarcoding_workflow/plants/results_its2/classification/preliminary/its2_vsearch.tsv", sep = "\t", header = FALSE)
+colnames(its2prelclass_df)[colnames(its2prelclass_df) == "V1"] <- "asv_code"
+colnames(its2prelclass_df)[colnames(its2prelclass_df) == "V2"] <- "id"
+colnames(its2prelclass_df)[colnames(its2prelclass_df) == "V3"] <- "match"
+```
+
+```{r}
+# Assuming its2prelclass_df is your existing dataframe
+# Create a new dataframe with columns 'asv_code' and 'id'
+its2prelclass_df_sub <- its2prelclass_df[, c("asv_code", "id","match")]
+
+# Print the new dataframe to verify
+print("New dataframe with 'asv_code' and 'id':")
+print(head(its2prelclass_df_sub))
+
+# Assuming all_bold_nbci_its2_may24 is your existing dataframe with taxonomic information
+# Merge the new dataframe with all_bold_nbci_its2_may24 using the 'id' column
+its2_merged_prelclass_df <- merge(its2prelclass_df_sub, combined_ncbi_its2_may24[, c("id", "kingdom", "phylum", "class", "order", "family", "genus", "species", "sequence")], by = "id", all.x = TRUE)
+
+# Print the merged dataframe to verify
+print("Merged dataframe with taxonomic columns:")
+print(head(its2_merged_prelclass_df))
+
+write.csv(merged_prelclass_df, file = "~/git/metabarcoding_workflow/plants/its2_preclass.csv", row.names = FALSE)
+```
+
+```{r}
+trnlprelclass_df <- read.table("~/git/metabarcoding_workflow/plants/results_trnl/classification/preliminary/trnl_vsearch.tsv", sep = "\t", header = FALSE)
+colnames(trnlprelclass_df)[colnames(trnlprelclass_df) == "V1"] <- "asv_code"
+colnames(trnlprelclass_df)[colnames(trnlprelclass_df) == "V2"] <- "id"
+colnames(trnlprelclass_df)[colnames(trnlprelclass_df) == "V3"] <- "match"
+```
+
+```{r}
+# Assuming its2prelclass_df is your existing dataframe
+# Create a new dataframe with columns 'asv_code' and 'id'
+trnlprelclass_df_sub <- trnlprelclass_df[, c("asv_code", "id","match")]
+
+# Print the new dataframe to verify
+print("New dataframe with 'asv_code' and 'id':")
+print(head(trnlprelclass_df_sub))
+
+# Assuming all_bold_nbci_its2_may24 is your existing dataframe with taxonomic information
+# Merge the new dataframe with all_bold_nbci_its2_may24 using the 'id' column
+trnl_merged_prelclass_df <- merge(trnlprelclass_df_sub, combined_ncbi_trnl_may24[, c("id", "kingdom", "phylum", "class", "order", "family", "genus", "species", "sequence")], by = "id", all.x = TRUE)
+
+# Print the merged dataframe to verify
+print("Merged dataframe with taxonomic columns:")
+print(head(trnl_merged_prelclass_df))
+
+write.csv(merged_prelclass_df, file = "~/git/metabarcoding_workflow/plants/trnl_preclass.csv", row.names = FALSE)
+```
