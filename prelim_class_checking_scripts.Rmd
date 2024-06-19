@@ -62,5 +62,5 @@ trnl_merged_prelclass_df <- merge(trnlprelclass_df_sub, combined_ncbi_trnl_may24
 print("Merged dataframe with taxonomic columns:")
 print(head(trnl_merged_prelclass_df))
 
-write.csv(merged_prelclass_df, file = "~/git/metabarcoding_workflow/plants/trnl_preclass.csv", row.names = FALSE)
+write.csv(trnl_merged_prelclass_df, file = "~/git/metabarcoding_workflow/plants/trnl_preclass@.csv", row.names = FALSE)
 ```

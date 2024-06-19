@@ -56,7 +56,7 @@ suppressPackageStartupMessages({
 xaringanExtra::use_panelset()
 
 # Load workspace from the previous notebook
-load(here::here("plants/cache/02.RData"))
+load(here::here("plants/cache_its2/02.RData"))
 ```
 
 ```{r}
@@ -219,7 +219,7 @@ if (! big_dataset) {
   stopifnot(all(! is.na(targets)))
   
   # This can be changed if you want different parameters
-  targets$min_consensus <- 0.51
+  targets$min_consensus <- 0.90
   targets$p_identity <- 0.85
   
   targets <- targets %>% 
@@ -373,7 +373,7 @@ mkdir(classification_thresholds_dir)
 ```
 
 ```{r}
-get_thresholds <- function(file_path, offset=3, max_threshold=80) {
+get_thresholds <- function(file_path, offset=1, max_threshold=80) {
   if (str_detect(file_path, ".qza$")) {
     results <- read_qza(file_path)$data
   } else {
@@ -468,6 +468,10 @@ threshold_file_list <- data.frame(
   file_list=c(here("plants/results/classification/thresholds/its2_files.txt"))
 )
 paged_table(threshold_file_list)
+
+# save threshold list
+saveRDS(thresholds_list, file = "~/git/metabarcoding_workflow/plants/results_its2.thresholds_list_its2.rds") 
+
 ```
 
 

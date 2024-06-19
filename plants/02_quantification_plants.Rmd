@@ -226,8 +226,8 @@ First, define the lengths that amplicon groups will be truncated to.
 # TODO: Custom truncation lengths from file? Don't know how this should be handled
 truncation_lengths <- data.frame(
   SampleName = c("its2", "rbcl", "trnl"),
-  forward_trunc_length = c(150, 140, 120),
-  reverse_trunc_length = c(150, 140, 120)
+  forward_trunc_length = c(150, 140, 40),
+  reverse_trunc_length = c(150, 140, 40)
 )
 paged_table(truncation_lengths)
 ```
@@ -342,7 +342,7 @@ dada2_vis <- loadWorkflow(targets=dada2_vis_targets, wf_file="qiime_dada2_vis.cw
 dada2_vis <- set_logs_dir(dada2_vis, logs_dir)
 dada2_vis <- renderWF(dada2_vis, inputvars=c(stats_qza="_INPUT_PATH_",
                                              stats_qzv="_OUTPUT_QZV_"))
-run_jobs(dada2_vis)
+#run_jobs(dada2_vis)
 ```
 
 
@@ -482,8 +482,8 @@ dir_tree(dada2_dir)
 Check dimensions of the table data pre and post-filtering.
 
 ```{r}
-before_filtering <- read_qza(file.path(dada2_dir, "short_table.qza"))
-after_filtering <- read_qza(file.path(dada2_dir, "short_table_filtered.qza"))
+before_filtering <- read_qza(file.path(dada2_dir, "trnl_table.qza"))
+after_filtering <- read_qza(file.path(dada2_dir, "trnl_table_filtered.qza"))
 ```
 
 ```{r}
@@ -628,7 +628,7 @@ dir_tree(lulu_dir)
 Save output so it can be loaded in subsequent notebooks.
 
 ```{r}
-save.image(here("plants/cache/02.RData"))
+save.image(here("plants/cache_trnl/02.RData"))
 ```
 
 

@@ -27,11 +27,13 @@ Starting from here will need the thershold list and the sample_df from Cache03
 # load results files from previuos steps
 ```{r}
 its2_lulu <- readRDS(here("plants/results_its2/lulu/its2_lulu.rds"))
-trnl_lulu <- readRDS(here("plants/results/lulu/trnl_lulu.rds"))
+trnl_lulu <- readRDS(here("plants/results_trnl/lulu/trnl_lulu.rds"))
 its2_classifications <- read_qza(here("plants/results_its2/classification/its2_classification.qza"))
-trnl_classifications <- read_qza(here("plants/results/classification/trnl_classification.qza"))
+trnl_classifications <- read_qza(here("plants/results_trnl/classification/trnl_classification.qza"))
 its2_seq <- read_qza(here("plants/results_its2/dada2/its2_representative_sequences.qza"))
-trnl_seq <- read_qza(here("plants/results/dada2/trnl_representative_sequences.qza"))
+trnl_seq <- read_qza(here("plants/results_trnl/dada2/trnl_representative_sequences.qza"))
+thresholds_list_its2 <- readRDS(here("plants/results_its2/thresholds_list_its2.rds"))
+thresholds_list_trnl <- readRDS(here("plants/results_trnl/thresholds_list_trnl.rds"))
 ```
 
 # check classification data for its2 amplicon
@@ -57,16 +59,16 @@ its2_lulu$curated_table
 ```{r}
 # Pull out table of read counts with LULU filter applied
 trnl_lulu$curated_table
-
+#trnl_lulu$orignal_table
 #trnl_lulu <- data.frame(trnl_lulu$curated_table)
 #trnl_class <- data.frame(trnl_classifications$data)
 ```
 
 ```{r}
-# merge its2_classifications with tHersholds
-its2_df <- merge(its2_classifications$data, thresholds_list[["its2"]], by.x="Feature.ID", by.y="feature-id")
+# merge its2_classifications with thersholds
+its2_df <- merge(its2_classifications$data, thresholds_list_its2[["its2"]], by.x="Feature.ID", by.y="feature-id")
 
-trnl_df <- merge(trnl_classifications$data, thresholds_list[["trnl"]], by.x="Feature.ID", by.y="feature-id")
+trnl_df <- merge(trnl_classifications$data, thresholds_list_trnl[["trnl"]], by.x="Feature.ID", by.y="feature-id")
 ```
 
 ```{r}
@@ -106,7 +108,7 @@ trnl_df %>% filter(Taxon == "Unassigned") %>% pull(max_p_identity) %>% table
 #its2_search_results <- read_qza(here("plants/results/classification/preliminary/its2_prelim_search_results.qza"))
 
 # for big dataset
-its2_search_results <- read_tsv(here("plants/results/classification/preliminary/its2_vsearch.tsv"))
+its2_search_results <- read_tsv(here("plants/results_its2/classification/preliminary/its2_vsearch.tsv"))
 
 ```
 
@@ -118,7 +120,7 @@ its2_search_results$data %>% dim
 # trnl_search_results <- read_qza(here("plants/results/classification/preliminary/trnl_prelim_search_results.qza"))
 
 # for big dataset
-trnl_search_results <- read_tsv(here("plants/results/classification/preliminary/trnl_vsearch.tsv"))
+trnl_search_results <- read_tsv(here("plants/results_trnl/classification/preliminary/trnl_vsearch.tsv"))
 
 ```
 
@@ -163,12 +165,12 @@ sample_groups
 
 ```{r}
 # Need to rename columns to get rid of the prefix X character if sample names start with a digit
-if (all(! colnames(all_tables[[1]]) %in% names(sample_groups))) {
-  all_tables <- lapply(all_tables, function(x) {
-    colnames(x) <- str_remove(colnames(x), "^X")
-    return(x)
-  })
-}
+#if (all(! colnames(all_tables[[1]]) %in% names(sample_groups))) {
+#  all_tables <- lapply(all_tables, function(x) {
+ #   colnames(x) <- str_remove(colnames(x), "^X")
+#    return(x)
+#  })
+#}
 
 ```
 
@@ -177,6 +179,15 @@ if (all(! colnames(all_tables[[1]]) %in% names(sample_groups))) {
 #make them dataframes
 its2_read_tab <- all_tables$its2
 trnl_read_tab <- all_tables$trnl
+# Function to remove prefixes
+
+remove_prefixes <- function(column_names) {
+  gsub("^(Pt|Pir)", "", column_names)
+}
+
+# Apply the function to the column names
+names(its2_read_tab) <- remove_prefixes(names(its2_read_tab))
+names(trnl_read_tab) <- remove_prefixes(names(trnl_read_tab))
 ```
 
 ```{r}
@@ -207,8 +218,8 @@ print(names_only_in_trnl_read_tab)
 # write scripts to add a blank column to align data for all amplicons
 ```{r}
 # align data set by adding blank column for columns not present in one amplicon but not the other (Cont3rep1, Cont1rep2). 
-its2_read_tab <- mutate(its2_read_tab, Cont3rep1 = c(0))
-trnl_read_tab <- mutate(trnl_read_tab, Cont1rep2 = c(0))
+#its2_read_tab <- mutate(its2_read_tab, Cont3rep1 = c(0))
+#trnl_read_tab <- mutate(trnl_read_tab, Cont1rep2 = c(0))
 ```
 
 ```{r}
@@ -237,7 +248,7 @@ all_readclass_df <- left_join(all_classif_df, all_read_df, by = "asv_code")
 its2_asvseq <- data.frame(its2_seq$data)
 trnl_asvseq <- data.frame(trnl_seq$data)
 
-# covert row headers to column and then name column 1
+# convert row headers to column and then name column 1
 its2_asvseq <- rownames_to_column(its2_asvseq, var = "asv_code")
 trnl_asvseq <- rownames_to_column(trnl_asvseq, var = "asv_code")
 
@@ -270,16 +281,18 @@ final_df$Taxon <- gsub("g__", "", final_df$Taxon)
 final_df$Taxon <- gsub("s__", "", final_df$Taxon)
 
 # place taxonomic data in separate columns
-final_df <- separate(final_df, Taxon, into = c("kingdom", "phylum", "class", "order", "family", "genus","species"), sep = ";",  fill = "trnl")
+final_df <- separate(final_df, Taxon, into = c("kingdom", "phylum", "class", "order", "family", "genus","species"), sep = ";",  fill = "right")
 
 # final tidy up (remove 'NA' and X from start of sample names)
 final_df[is.na(final_df)] <- ""
-names(final_df) <- sub("X", "", names(final_df))
+#names(final_df) <- sub("X", "", names(final_df))
 head(final_df)
 
-# save dataframe
-write.csv(final_df, file = "~/git/metabarcoding_workflow/results/final_data_summaryX_X_24.csv", row.names = FALSE)
+```
 
+```{r}
+# save dataframe
+write.csv(final_df, file = "~/git/metabarcoding_workflow/plants/plants_final_data_summary_trnl_revised_18_Jun_24.csv", row.names = FALSE)
 ```
 
 # have not explored script beyond this point (Mel)
