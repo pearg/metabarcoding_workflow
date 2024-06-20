@@ -64,13 +64,6 @@ Sys.setenv(PATH=paste0("/mnt/galaxy/gvl/software/shared_envs/qiime2/bin:",
 Sys.setenv(PYTHONNOUSERSITE="/mnt/galaxy/gvl/software/shared_envs/qiime2/lib/python*/site-packages/")
 ```
 
-```{r}
-use_slurm <- TRUE
-slurm_threads <- 8
-slurm_resources <- list(partition="main", ntasks=1, ncpus=slurm_threads, memory=4096)
-slurm_n_jobs <- 10
-```
-
 #### If running files transfered from water-prod###
 ```{r}
 # You can use the here::here function to define a path relative to the project 
@@ -98,9 +91,23 @@ targets <- data.frame(FileName=import_targets,
 import_targets <- here("tmp/import_targets.txt")
 write.table(targets, file=import_targets, sep="\t", row.names=FALSE, quote=FALSE)
 cwl_path <- here("param/cwl")
+
+# use_slurm <- FALSE
+use_slurm <- TRUE
+
+# Settings for slurm (you can ignore these if `use_slurm` is set to FALSE)
+slurm_conffile <- here::here("src/.batchtools.conf.R")
+slurm_template <- here::here("src/batchtools.slurm.tmpl")
+slurm_resources <- list(partition="main", ntasks=1, ncpus=1, memory=4096)
+slurm_n_jobs <- 10
 ```
 
-
+```{r}
+use_slurm <- TRUE
+slurm_threads <- 8
+slurm_resources <- list(partition="main", ntasks=1, ncpus=slurm_threads, memory=4096)
+slurm_n_jobs <- 10
+```
 # Combine into amplicon groups
 
 ### Extract step

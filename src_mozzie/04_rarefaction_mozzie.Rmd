@@ -231,9 +231,9 @@ The --p-max-depth should be played with if it is too high this chunk will return
 
 ```{r}
 # Define the AMPLICON variable with both values
-AMPLICON <- c("short", "right")
+#AMPLICON <- c("short", "right")
 #AMPLICON <- c("right")
-
+AMPLICON <- c("short")
 output_dir <- "~/git/metabarcoding_workflow/results"
 
 # Loop over each value in AMPLICON
@@ -537,7 +537,7 @@ ggsave("~/git/metabarcoding_workflow/results/rarefaction/right_amplicon_rarefrac
 # For the short amplicon at 100 to 30K reads
 ```{r}
 # import rarefaction data from the '.qzv' file
-short_rf30 <- read_csv("~/git/metabarcoding_workflow/results/rarefaction/short_mult_rarefaction_100_to_30K_by_sample/observed_features.csv")
+short_rf30 <- read_csv("~/git/metabarcoding_workflow/results/rarefaction/short_mult_rarefaction_100_to_20K_by_sample/observed_features.csv")
 
 # modify into a format suitable for ggplot
 short_rf30_table <- short_rf30 %>%
@@ -571,14 +571,14 @@ short_rf30_table_av <- short_rf30_table %>%
 # alpha rarefraction plot of data for short amplicon at of sequencing depth of upto 10K
 ggplot(data = short_rf30_table_av, aes(x = depth, y = avg_ASV_no, group = sample_id, color = sample_id)) +
   geom_line(show.legend = FALSE) +
-  labs(title = "short amplicon alpha rarefraction at 30K sequencing depth",
+  labs(title = "short amplicon alpha rarefraction at 20K sequencing depth",
        x = "sequencing depth",
        y = "number of ASVs",
        color = "Sample ID") +
   theme_minimal()
 
 #save plot for paper
-ggsave("~/git/metabarcoding_workflow/results/rarefaction/short_amplicon_rarefraction_30K.png", plot = last_plot(), width = 8, height = 6, dpi = 300, bg = "white")
+ggsave("~/git/metabarcoding_workflow/results/rarefaction/short_amplicon_rarefraction_20K.png", plot = last_plot(), width = 8, height = 6, dpi = 300, bg = "white")
 ```
 
 
