@@ -1,0 +1,253 @@
+---
+title: "miseq22_arc_reruns"
+author: "Melissa Carew"
+date: "24/06/2025"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(dplyr)
+library(stringr)
+```
+
+```{r}
+miseq_folder <- "miseq22"
+
+ # read in df from miseq22
+final_df <- read.csv("~/uomShare/wergStaff/MelCarew/git-data/metabarcoding_workflow/miseq22/metabarcoding_workflow/final_data_summaries/miseq22_vsearch_data_summary_filled_03_07_2025.csv")
+
+#pull out columns with re-run samples
+final_df_reruns <- final_df %>% select(asv_code, kingdom, phylum, class, order, family, genus, species, Consensus, max_p_identity, threshold, A22BT2373rep4, A22BT2373rep5, A22BT2373rep6, A23YAR3637rep4, A23YAR3637rep5, A23YAR3637rep6, S21ANS16116rep5, S21ANS16116rep6, asv_seq, amplicon)
+
+final_df_reruns <- final_df_reruns %>%
+  filter(
+    !(A22BT2373rep4 == 0 & A22BT2373rep5 == 0 & A22BT2373rep6 == 0 &
+      A23YAR3637rep4 == 0 & A23YAR3637rep5 == 0 & A23YAR3637rep6 == 0 &
+      S21ANS16116rep5 == 0 & S21ANS16116rep6 == 0)
+  )
+
+miseq16 <- read.csv("~/uomShare/wergStaff/MelCarew/git-data/metabarcoding_workflow/miseq16/metabarcoding_workflow/final_data_summaries/Miseq16_vsearch_data_summary_filled_03_07_2025.csv")
+
+final_df_ans <- miseq16 %>% select(asv_code, kingdom, phylum, class, order, family, genus, species, Consensus, max_p_identity, threshold, S21ANS16116rep3, asv_seq, amplicon)
+
+
+final_df_ans <- final_df_ans %>%
+  filter(
+    !(S21ANS16116rep3 == 0)
+  )
+```
+
+
+# Change data to long formmat (list) for PCR replicate filtering 
+Note: This code will need to be configured for each dataset, so that the rows containing the read counts are specified
+```{r}
+# Step 1: Pivot longer to transform selected columns into rows
+metab_long1 <- final_df_reruns %>%
+  pivot_longer(
+    cols = A22BT2373rep4:S21ANS16116rep6, 
+    names_to = "sample", 
+    values_to = "value"
+  ) %>%
+  filter(value != 0) %>%  # Remove rows where value is zero
+  select(-matches("^X(\\.\\d+)?$"))  # Remove unwanted columns named X, X.1, etc.
+
+metab_long2 <-final_df_ans %>%
+  pivot_longer(
+    cols = S21ANS16116rep3, 
+    names_to = "sample", 
+    values_to = "value"
+  ) %>%
+  filter(value != 0) %>%  # Remove rows where value is zero
+  select(-matches("^X(\\.\\d+)?$"))  # Remove unwanted columns named X, X.1, etc.
+
+metab_long <- rbind (metab_long1, metab_long2)
+
+# Reorder columns with variable as the first column
+metab_long <- metab_long %>%
+  select(sample, everything())  # Move variable column to the first position
+
+# Create a new column "replace" by pasting the final character if string ends in 'rep1', 'rep2', or 'rep3'
+metab_long <- metab_long %>%
+  mutate(replicate = ifelse(grepl("rep[12345678]$", sample), paste0(substr(sample, nchar(sample), nchar(sample)), ""), ""))
+
+# Move the "replace" column to be the second column
+metab_long <- metab_long %>%
+  select(sample, replicate, everything())  # Move "replace" to the second column
+
+#metab_long <- metab_long %>%
+#  mutate(sample = str_replace(sample, "^X", ""))
+
+# add 'factor' column
+metab_long$site_per <- substr(metab_long$sample, 1, nchar(metab_long$sample))
+
+# remove replicate data
+metab_long <- metab_long %>%
+   dplyr::mutate(site_per = sub("(rep1|rep2|rep3|rep4|rep5|rep6|rep7|rep8)$", "", site_per))
+
+# Move the "replace" column to be the second column
+metab_long <- metab_long %>%
+  select(sample, replicate, site_per, everything())  # Move "replace" to the second column
+
+# add 'factor' column
+metab_long$site <- substr(metab_long$site_per, 1, nchar(metab_long$site_per))
+
+
+#Move the "replace" column to be the second column (for Miseq13 only)
+#metab_long <- metab_long %>%
+#select(sample, replicate, site_per, site, everything())  # Move "replace" to the second column
+
+# Move the "replace" column to be the second column
+metab_long <- metab_long %>%
+  select(sample, replicate, site, everything())  # Move "replace" to the second column
+
+# Rename the 'values' column to 'reads' using dplyr's rename()
+metab_long <- metab_long %>% dplyr::rename(`reads` = value)
+
+```
+
+# remove low frequency detections < 5 reads
+```{r}
+metab_long_hf <- metab_long %>%
+  filter(reads >= 5)
+
+metab_long_metab_long <- metab_long %>%
+  filter(reads < 5)  # Corrected this line
+
+# Verify the number of records before and after filtering
+original_count <- nrow(metab_long)
+hf_count <- nrow(metab_long_hf)
+metab_long_count <- nrow(metab_long_metab_long)
+
+cat("Original number of records:", original_count, "\n")
+cat("Number of records with reads >= 5:", hf_count, "\n")
+cat("Number of records with reads < 5:", metab_long_count, "\n")
+```
+
+# Filtering single PCR replicate detections
+
+# filtering by 'species' subset out data with species ids
+```{r}
+# Subset where 'species' has non-empty character values
+metab_long_species <- metab_long_hf %>% filter(!is.na(species) & species != "")
+
+# Subset where 'species' has empty cells or NA (for ASV filtering)
+metab_long_no_species <- metab_long_hf %>% filter(is.na(species) | species == "")
+```
+
+# filter based on common species as these are more likely to be invovled in misstagging in the dataset
+```{r}
+# Step 1: Group by species and summarize the total reads
+species_reads <- metab_long_species %>%
+  group_by(species) %>%
+  summarise(total_reads = sum(reads, na.rm = TRUE)) %>%
+  arrange(desc(total_reads))
+
+# Print species_reads to verify the summarized data
+print(species_reads)
+
+# Step 2: Extract the top 10 species detections based on 'total_reads' values
+top_species <- species_reads %>%
+  top_n(10, wt = total_reads) %>%
+  pull(species)
+
+# Print top_species to verify the top species
+print(top_species)
+
+# Step 3: Filter out reads below 50 for the top 10 species in filtered_dataframe
+filtered_df_top_sp <- metab_long_species %>%
+  filter(!(species %in% top_species & reads < 50))
+
+filtered_df_top_sp_rem <- metab_long_species %>%
+  filter((species %in% top_species & reads < 50))
+
+# Verify the number of records before and after filtering
+original_count <- nrow(metab_long_species)
+filtered_count <- nrow(filtered_df_top_sp)
+
+cat("Original number of records:", original_count, "\n")
+cat("Number of records after filtering:", filtered_count, "\n")
+cat("Number of records removed:", original_count - filtered_count, "\n")
+```
+
+# remove single species occurences (species detection that occur in only one PCR replicate)
+```{r}
+# Remove the count column as it is no longer needed
+# Step 1: Create the counts data frame
+counts_sp <- filtered_df_top_sp %>%
+  group_by(site, species) %>%
+  summarise(rep_count = n_distinct(replicate), .groups = 'drop')  # Count distinct replicates
+
+# Step 2: Filter out rows where the combination of 'site' and 'species' appears only once
+sp_fil_metab_long_species <- filtered_df_top_sp %>%
+  left_join(counts_sp, by = c("site", "species")) %>%
+filter(rep_count > 1) %>%
+  select(-rep_count)  # Remove the rep_count column as it is no longer needed
+
+sp_fil_metab_long_rem <- filtered_df_top_sp %>%
+  filter(species %in% counts_sp$species[counts_sp$rep_count == 1] &
+           site %in% counts_sp$site[counts_sp$rep_count == 1])
+
+# Verify the number of records before and after filtering
+original_count <- nrow(filtered_df_top_sp)
+filtered_count <- nrow(sp_fil_metab_long_species)
+
+cat("Original number of records:", original_count, "\n")
+cat("Number of records after filtering:", filtered_count, "\n")
+cat("Number of records removed:", original_count - filtered_count, "\n")
+
+# Print the modified dataframe
+print(sp_fil_metab_long_species)
+
+```
+
+# remove single ASV occurences
+Remove ASV's with only a single occurrence in a sample (in only one PCR replicate) this targets ASV's without identifications or OTU groupings
+```{r}
+# Step 1: Create the counts_asv data frame
+counts_asv <- metab_long_no_species %>%
+  group_by(asv_code, site) %>%
+  summarise(rep_count = n_distinct(replicate), .groups = 'drop')  # Count distinct replicates
+
+# Inspect the counts_asv data frame
+print(counts_asv)
+
+# Step 2: Join and filter based on counts
+asv_fil_metab_long <- metab_long_no_species %>%
+  left_join(counts_asv, by = c("asv_code", "site")) %>%
+filter(rep_count > 1) %>%
+  select(-rep_count)  # Remove the rep_count column as it is no longer needed
+# Step 3: Verify the number of records before and after filtering
+original_count <- nrow(metab_long_no_species)
+filtered_count <- nrow(asv_fil_metab_long)
+
+cat("Original number of records:", original_count, "\n")
+cat("Number of records after filtering:", filtered_count, "\n")
+cat("Number of records removed:", original_count - filtered_count, "\n")
+```
+
+# bind filtered data
+```{r}
+#rejoin_dataframes
+filtered_final_df <- rbind(sp_fil_metab_long_species, asv_fil_metab_long)
+```
+
+```{r}
+# Create directory for modeling data
+dir.creat"('~/uomShare/wergStaff/MelCarew/git-data/metabarcoding_workflow/miseq22/metabarcoding_workflow/final_data_summaries/final_modeling_data/"))
+
+# Generate a timestamp
+timestamp <- format(Sys.time(), "%d_%m_%Y")
+
+# Create the file name with the timestamp (set Miseq run number)
+file_name <- here::here(paste0("~/uomShare/wergStaff/MelCarew/git-data/metabarcoding_workflow/miseq22/metabarcoding_workflow/final_modeling_data/miseq22_re-runs_final_data_long_format_", timestamp, ".csv"))
+
+# Save the dataframe with the new file name
+write.csv(filtered_final_df, file = file_name, row.names = FALSE)
+```
+
+

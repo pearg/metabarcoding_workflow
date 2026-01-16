@@ -1,0 +1,198 @@
+---
+title: "private library updates"
+format: html
+editor: visual
+---
+
+## Quarto
+
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+
+#update private Library - 2025
+
+```{r}
+library(dplyr)
+
+uomshare <- "~/uomShare/wergStaff/MelCarew/git-data/Spring_2018_DNA_metabarcoding_data/metabarcoding_workflow_trial/"
+
+file_path <- "~/uomShare/wergStaff/MelCarew/git-data/metabarcoding_workflow/asv_library/asv_library_corrected.xlsx"
+
+# Get the names of the sheets
+sheet_names <- readxl::excel_sheets(file_path)
+
+# Read the sheets into as dataframes
+asv_lib <- readxl::read_excel(file_path, sheet = sheet_names[1])
+
+# Fix naming issues i.e. same species with different taxonomy
+asv_tax_dups_fix <- read.csv("~/uomShare/wergStaff/MelCarew/DNAbarcode_reference_databases/asv_tax_fixed_names.csv")
+asv_lib <- asv_lib %>%
+  left_join(
+    asv_tax_dups_fix %>%
+      select(species, kingdom, phylum, class, order, family, genus),
+    by = "species"
+  ) %>%
+  mutate(
+    kingdom = coalesce(kingdom.y, kingdom.x),
+    phylum = coalesce(phylum.y, phylum.x),
+    class = coalesce(class.y, class.x),
+    order = coalesce(order.y, order.x),
+    family = coalesce(family.y, family.x),
+    genus = coalesce(genus.y, genus.x)
+  ) %>%
+  select(-ends_with(".x"), -ends_with(".y"))
+
+write.csv(asv_lib, "~/uomShare/wergStaff/MelCarew/git-data/metabarcoding_workflow/asv_library/asv_library_corrected_MC.xlsx")
+
+max_p_updates <- readxl::read_excel(file_path, sheet = sheet_names[2])  # if required
+
+bin_uri_unq <- readxl::read_excel(file_path, sheet = sheet_names[3])  # if required
+
+bin_uri_unq <- bin_uri_unq %>%
+  group_by(bin_uri) %>%
+  filter(n() == 1) %>%
+  arrange(bin_uri)
+# 
+# MC_cks <- read.csv("~/uomShare/wergStaff/MelCarew/git-data/metabarcoding_workflow/asv_source_files/all_mc_checks.csv")
+# 
+# MC_cks <- MC_cks %>%
+#   dplyr::rename(bin_uri = bold_bin_uri)
+#  
+# dup_bins_fix <- dup_bins %>%
+#   left_join(
+#     MC_cks %>% select(bin_uri, checked_species_name),
+#     by = "bin_uri"
+#   ) %>% distinct()
+# 
+# write.csv(dup_bins_fix, "~/uomShare/wergStaff/MelCarew/git-data/Spring_2018_DNA_metabarcoding_data/dup_bins_fix.csv")
+
+dup_bins_uniq <- read.csv("~/uomShare/wergStaff/MelCarew/git-data/Spring_2018_DNA_metabarcoding_data/dup_bins_fix.csv")
+
+bin_uri_unq <- rbind(bin_uri_unq, dup_bins_uniq)
+
+uomshare <- "~/uomShare/wergStaff/MelCarew/git-data/Spring_2018_DNA_metabarcoding_data/metabarcoding_workflow_trial/"
+```
+
+```{r}
+library(stringr)
+
+uomshare2 <- "~/uomShare/wergStaff/MelCarew/DNAbarcode_reference_databases/"
+
+# most recent private library
+priv_lib <- read.csv(paste0(uomshare2, "priv_lib_Nov23_all.csv"))
+
+# read in .csv files with bold barcodeID engine results.
+bold_results4 <- read.csv(paste0(uomshare2, "private_DNAbarcode_1_1000_BOLD_results.csv"))
+bold_results5 <- read.csv(paste0(uomshare2, "private_DNAbarcode_1001_2000_BOLD_results.csv"))
+bold_results6 <- read.csv(paste0(uomshare2, "private_DNAbarcode_2001_2450_BOLD_results.csv"))
+bold_results7 <- read.csv(paste0(uomshare2, "private_DNAbarcode_2450_end_BOLD_results.csv"))
+# combine all results into a single file
+bold_results_prvi_all <- rbind(bold_results4, bold_results5, bold_results6, bold_results7)
+
+# rename all results to match other dataframes
+bold_results_prvi_all <- bold_results_prvi_all %>%
+  dplyr::rename(id = Query.ID,
+         species_bold = Species,
+         genus = Genus,
+         family = Family,
+         order = Order, 
+         class = Class,
+         phylum = Phylum
+         )
+
+# Method using extract 'bin_url' and place in a new column
+bold_results_prvi_all <- bold_results_prvi_all %>%
+  mutate(bin_uri = str_extract(PID..BIN., "(?<=:)(.*?)(?=])"))
+
+bold_results_prvi_all <- bold_results_prvi_all %>%
+  left_join(
+    bin_uri_unq %>% select(bin_uri, species),
+    by = "bin_uri"
+  )
+
+# summarize the bold data keeping the highest value for ID. Remove PID..BIN. column so duplicate bin_uri_unq can be removed.
+bold_results_prvi_all <- bold_results_prvi_all %>%
+  select(-"PID..BIN.")
+
+
+# summarise so there is one  bin_uri_unq per row
+bold_results_prvi_sum <- bold_results_prvi_all %>%
+   group_by(id) %>%
+   slice_max(order_by = ID., n = 1, with_ties = FALSE) %>%
+   ungroup() %>%
+   distinct(id, .keep_all = TRUE) %>%
+   dplyr::rename(species_asv_lib_name = species)  
+
+bold_results_prvi_sum <- bold_results_prvi_sum %>%
+  mutate(species_bold = ifelse(!is.na(species_asv_lib_name), species_asv_lib_name, species_bold)) %>%
+  dplyr::rename(species = species_bold,
+                bold_match = ID.) 
+
+priv_lib <- priv_lib  %>%
+  left_join(bold_results_prvi_sum
+     %>% select(id, bin_uri, bold_match),
+    by = "id"
+  )
+
+priv_lib <- priv_lib %>%
+  left_join(bin_uri_unq %>% select(bin_uri, species),
+    by = "bin_uri"
+  ) %>% dplyr::rename(species = species.x,
+                species_asv_lib_name = species.y) 
+```
+
+```{r}
+priv_lib_diff <- priv_lib %>%
+  filter(!is.na(species) & !is.na(species_asv_lib_name) & species != species_asv_lib_name)
+
+priv_lib <- priv_lib %>%
+  mutate(species = if_else(bold_match >= 97 & !is.na(species_asv_lib_name), species_asv_lib_name, species))
+```
+
+```{r}
+# new names not aleady in database
+priv_lib <- priv_lib %>%
+  mutate(species = ifelse(trimws(species) == "Australocyclops sp. MC-1", "Australocyclops sp. B-ADR2310", species)) %>%
+  mutate(species = ifelse(trimws(species) == "Hygrobatidae sp. MC-BC2", "Hygrobatidae sp. B-AGP1020", species)) %>%
+  mutate(species = ifelse(trimws(species) == "Curculionidae sp. MC-1", "Curculionidae sp. B-AGM9740", species)) %>%
+  mutate(species = ifelse(trimws(species) == "Hydraena sp. MC-3", "Hydraena sp. B-AEH5095", species)) %>%
+  mutate(species = ifelse(trimws(species) == "Hydraena sp. MC-7", "Hydraena sp. B-AGL5899", species)) %>%
+  mutate(species = ifelse(trimws(species) == "Scirtidae sp. MC-9", "Scirtidae sp. B-AED1932", species)) %>%
+  mutate(species = ifelse(trimws(species) == "Libnotes sp.", "Libnotes sp. B-AAN4393", species)) %>%
+  mutate(species = ifelse(trimws(species) == "Molophilus sp. B-AAW0957", "Molophilus sp. B-AAW0957", species)) %>%
+  mutate(species = ifelse(trimws(species) == "Ischnotoma sp.", "Ischnotoma sp. B-ACA4609", species)) %>%
+  mutate(species = ifelse(trimws(species) == "ParaLimnophila sp. ZB-TypeA", "Paralimnophila sp. B-ACM3183", species)) %>%
+  mutate(genus = ifelse(trimws(genus) == "ParaLimnophila", "Paralimnophila", genus)) %>%
+  mutate(species = ifelse(trimws(species) == "Lauterborniella sp. MC-1", "Lauterborniella sp. B-ADY1618", species)) %>%
+  mutate(species = ifelse(trimws(species) == "Diplodontus haliki", "Hydryphantidae sp. MC-1", species)) %>%
+  mutate(genus = ifelse(trimws(genus) == "Diplodontus", "", genus)) %>%
+  mutate(species = ifelse(trimws(species) == "Limnophyes sp. B-ABW2734", "Limnophyes sp. MC-B", species)) %>%
+  mutate(species = ifelse(trimws(species) == "Gordiidae sp. MC-1", "Gordiidae sp. B-AGK7267", species)) %>%
+  mutate(species = ifelse(trimws(species) == "Cladopelma sp. B-AAD7362", "Cladopelma sp. B-ACQ6934", species)) %>%
+  mutate(species = ifelse(trimws(species) == "Ozeoura sp. ZB-T20259", "Ozeoura sp. B-AGB3427", species)) %>%
+  mutate(species = ifelse(trimws(species) == "Limnophila sp. ZB-EPAsp30", "Limnophila sp. B-AGC6410", species)) %>%
+  mutate(species = ifelse(trimws(species) == "Tonnoiromyia sp. ZB-EPAsp3", "Tonnoiromyia sp. B-AGD0043", species)) %>%
+  mutate(species = ifelse(trimws(species) == "Rhabdomastix sp. ZB-EPAsp38", "Rhabdomastix sp. B-AGD1474", species)) %>%
+  mutate(species = ifelse(trimws(species) == "Collessophila sp.", "Collessophila sp. B-AGE2515", species)) %>%
+  mutate(species = ifelse(trimws(species) == "Psychodidae sp. MC-7", "Psychodidae sp. B-AGK4242", species)) %>%
+  mutate(species = ifelse(trimws(species) == "Ceratopogonidae sp. MC-27", "Ceratopogonidae sp. B-AGN3457", species)) %>%
+  mutate(species = ifelse(trimws(species) == "Ceratopogonidae sp. MC-43", "Ceratopogonidae sp. B-AGQ9834", species)) %>%
+  mutate(species = ifelse(trimws(species) == "Ceratopogonidae sp. MC-39", "Ceratopogonidae sp. B-AGR9369", species)) %>%
+  mutate(species = ifelse(trimws(species) == "Orthocladiinae sp. MC-J", "Orthocladiinae sp. B-AGN3242", species)) %>%
+  mutate(species = ifelse(trimws(id) == "Co18Caen5", "Tasmanocoenis sp. MC-1", species)) %>%
+  mutate(species = ifelse(trimws(species) == "Orthonychiurus sp. MC-1", "Orthonychiurus sp. B-ACG0182", species)) %>%
+  mutate(bin_uri = case_when(
+    trimws(species) == "Paratanytarsus grimmii" ~ "AAD1485",
+    trimws(species) == "Potamopyrgus antipodarum" ~ "ABY5556",
+    trimws(species) == "Triplectides truncatus" ~ "ADF0434",
+    trimws(species) == "Tanytarsus sp. B-AAE1904" ~ "AAE1904",
+    trimws(species) == "Austropeplea tomentosa" ~ "AAW3092",
+    TRUE ~ bin_uri
+  ))
+
+
+priv_lib <- priv_lib %>%
+  mutate(sequence_name = paste0(gsub(" ", "_", species), "-", id)) %>%  tidyr::drop_na()
+
+write.csv(priv_lib, "~/uomShare/wergStaff/MelCarew/DNAbarcode_reference_databases/priv_lib_updated_17_6_2025.csv", row.names = FALSE)
+
+```

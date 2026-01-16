@@ -1,0 +1,179 @@
+---
+title: "Data_summary_from_bioinformatic_pipeline"
+author: "Jessica Chung /Melissa Carew"
+date: "01/03/2024"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This notebook arranges the data from the bioinformatic pipeline into a final table for data filling and filtering (in notebaook '06_filling_taxonomy_PCR_rep_filtering'.
+
+```{r}
+library(dplyr)
+```
+
+# producing data summary table
+
+Starting from here will need the thersholds list and the sample_df from cache03. If it was not saved individually you will need to load the entire cache
+```{r}
+#load all of cahche03
+#load(here::here("results/cache/03.RData"))
+
+# load thresholds_list form cahche03 
+thresholds_list <- readRDS(here::here("results/cache/thresholds_list.rds"))
+samples_df <- readRDS(here::here("results/cache/samples_df.rds"))
+```
+
+# load results files from previuos steps
+These tables are required for assembling final data table
+```{r}
+short_lulu <- readRDS(here::here("results/lulu/short_lulu.rds"))
+short_classifications <- qiime2R::read_qza(here::here("results/classification/short_classification.qza"))
+short_seq <- qiime2R::read_qza(here::here("results/dada2/short_representative_sequences.qza"))
+```
+
+# check classification data for short amplicon
+```{r}
+short_classifications$data %>% head(100)
+```
+
+```{r}
+# Pull out table of read counts with LULU filter applied
+short_lulu$curated_table
+```
+
+```{r}
+# merge short_classifications with thersholds
+short_df <- merge(short_classifications$data, thresholds_list[["short"]], by.x="Feature.ID", by.y="feature-id")
+```
+
+```{r}
+short_seq$data %>% head
+```
+
+```{r}
+short_df %>% arrange(desc(max_p_identity)) %>% head(100)
+```
+
+```{r}
+table(short_df$Taxon == "Unassigned")
+```
+
+```{r}
+short_df %>% filter(Taxon == "Unassigned") %>% pull(max_p_identity) %>% table
+```
+
+```{r}
+# load classification results for short amplicon
+short_search_results <- readr::read_tsv(here::here("results/classification/preliminary/short_vsearch.tsv"))
+```
+
+## Combine workflow outputs
+
+# fix sample names (if they have 'X' at the start)
+This is the case for sampled from the 10 sites study as the names start with numbers
+
+```{r}
+all_tables <- list(
+  short=short_lulu$curated_table)
+```
+
+
+```{r}
+# Get sample names and groups
+sample_groups <- samples_df$factor
+names(sample_groups) <- samples_df$sample_name
+sample_groups
+```
+
+# combining read tables for the short and right amplicons
+```{r}
+#make them dataframes
+short_read_tab <- all_tables$short
+```
+
+```{r}
+# Do the amplicon datasets contain the same number of samples?
+short_read_tab %>% dim
+```
+
+```{r}
+#merge short and right reads tables into one dataframe
+all_read_df <-  short_read_tab
+
+# covert row headers to column and then name column 1
+all_read_df <- tibble::rownames_to_column(all_read_df, var = "asv_code")
+```
+
+# combining read classification tables for the short and right amplicons
+```{r}
+# bind short and right classification data
+all_classif_df <-  rbind(short_df)
+
+# rename column 1
+colnames(all_classif_df)[1] <- "asv_code"
+
+# join into a singe dataframe
+all_readclass_df <- left_join(all_classif_df, all_read_df, by = "asv_code")
+```
+
+# add in ASV sequence data
+```{r}
+# put sequences in a dataframe
+short_asvseq <- data.frame(short_seq$data)
+
+# covert row headers to column and then name column 1
+short_asvseq <- tibble::rownames_to_column(short_asvseq, var = "asv_code")
+
+# add amplicon information
+short_asvseq  <- mutate(short_asvseq, amplicon = "short")
+
+# align column names for merging
+short_asvseq <- short_asvseq %>% dplyr::rename(asv_seq = short_seq.data)
+
+# merge data into a single dataframe
+all_asvseq <-  short_asvseq
+```
+
+```{r}
+# merge ALL data into a single dataframe
+final_df <- left_join(all_readclass_df, all_asvseq, by = "asv_code")
+
+# remove columns without data
+final_df <- na.omit(final_df)
+
+final_df$Taxon <- gsub("k__", "", final_df$Taxon)
+final_df$Taxon <- gsub("p__", "", final_df$Taxon)
+final_df$Taxon <- gsub("c__", "", final_df$Taxon)
+final_df$Taxon <- gsub("o__", "", final_df$Taxon)
+final_df$Taxon <- gsub("f__", "", final_df$Taxon)
+final_df$Taxon <- gsub("g__", "", final_df$Taxon)
+final_df$Taxon <- gsub("s__", "", final_df$Taxon)
+
+# place taxonomic data in separate columns
+final_df <- tidyr::separate(final_df, Taxon, into = c("kingdom", "phylum", "class", "order", "family", "genus","species"), sep = ";",  fill = "right")
+
+# final tidy up (remove 'NA' and X from start of sample names)
+final_df[is.na(final_df)] <- ""
+names(final_df) <- sub("X", "", names(final_df))
+head(final_df)
+```
+
+
+
+```{r}
+# save dataframe create a directory for results
+dir.create(here::here("results/final_data_summaries"))
+
+timestamp <- format(Sys.time(), "%d_%m_%Y")
+
+# Create the file name with the timestamp 
+file_name <- paste0(here::here("results/final_data_summaries/MW_short_vsearch_data_summary_"), timestamp, ".csv")
+
+# Save the dataframe with the new file name
+write.csv(final_df, file = file_name, row.names = FALSE)
+```
+

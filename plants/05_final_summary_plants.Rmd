@@ -1,0 +1,218 @@
+---
+title: "final_data_summary"
+author: "Jessica Chung /Melissa Carew"
+date: "01/03/2024"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This final section enables data to be arranged into a final table for future analysis.
+
+# producing final data summary
+
+Starting from here will need the thershold list and the sample_df from Cache03
+```{r}
+load(here::here("plants/cache/03.RData"))
+#save(thresholds_list, file = here("cache/thresholds_list.RData"))
+#saveRDS(samples_df, file = here("plants/samples_df.rds"))
+
+# clear Global environment
+#load(here::here("plants/results/classification/thresholds/thresholds_list.rds"))
+#load(here::here("cache/samples_df.rds"))
+```
+
+# load results files from previuos steps
+```{r}
+zeale_lulu <- readRDS(here("bat_diet/results/lulu/zeale_lulu.rds"))
+#zeale_classifications <- read_qza(here("plants/results/classification/zeale_classification.qza"))
+zeale_seq <- read_qza(here("bat_diet/results/dada2/zeale_representative_sequences.qza"))
+#thresholds_list <- readRDS(here("plants/cache/thresholds_list.rds"))
+#samples_df <- readRDS(here::here("plants/cache/samples_df.rds"))
+```
+
+# check classification data for zeale amplicon
+```{r}
+zeale_classifications$data %>% head(100)
+```
+
+```{r}
+# Pull out table of read counts with LULU filter applied
+zeale_lulu$curated_table
+```
+
+```{r}
+# merge zeale_classifications with thresholds
+zeale_df <- merge(zeale_classifications$data, thresholds_list[["zeale"]], by.x="Feature.ID", by.y="feature-id")
+```
+
+```{r}
+zeale_seq$data %>% head
+```
+
+
+```{r}
+trnl_seq$data %>% head
+```
+
+```{r}
+zeale_df %>% arrange(desc(max_p_identity)) %>% head(100)
+```
+
+```{r}
+table(zeale_df$Taxon == "Unassigned")
+```
+
+```{r}
+zeale_df %>% filter(Taxon == "Unassigned") %>% pull(max_p_identity) %>% table
+```
+
+
+
+
+```{r}
+# for big dataset
+zeale_search_results <- read_tsv(here("plants/results/classification/preliminary/zeale_vsearch.tsv"))````
+
+```{r}
+zeale_search_results$data %>% dim
+```
+
+## Combine workflow outputs
+
+# fix sample names
+
+This can be changed with future feedback.  
+
+We could use https://docs.qiime2.org/2023.5/plugins/available/feature-table/filter-features-conditionally/
+if we want simple filtering, but if we want to do something complex, better to do it manually.
+
+
+```{r}
+all_tables <- list(
+  zeale=zeale_lulu$curated_table)
+```
+
+
+```{r}
+# Get sample names and groups
+sample_groups <- samples_df$factor
+names(sample_groups) <- samples_df$sample_name
+sample_groups
+```
+
+# combining read tables for the zeale rbcl and trnl amplicons
+```{r}
+# make them dataframes
+zeale_read_tab <- all_tables$zeale
+
+# Apply the function to the column names
+names(zeale_read_tab) <- remove_prefixes(names(zeale_read_tab))
+```
+
+
+```{r}
+#merge zeale and trnl reads tables into one dataframe
+all_read_df <-  rbind(zeale_read_tab)
+
+# covert row headers to column and then name column 1
+all_read_df <- rownames_to_column(all_read_df, var = "asv_code")
+```
+
+#Combining read classification tables for the zeale and trnl amplicons
+```{r}
+# # bind zeale rbcl and trnl classification data
+# all_classif_df <-  rbind(zeale_df, rbcl_df, trnl_df)
+# 
+# # rename column 1
+# colnames(all_classif_df)[1] <- "asv_code"
+# 
+# # join into a singe dataframe
+# all_readclass_df <- left_join(all_classif_df, all_read_df, by = "asv_code")
+```
+
+# add in ASV sequence data
+```{r}
+# put sequences in a dataframe
+zeale_asvseq <- data.frame(zeale_seq$data)
+
+# convert row headers to column and then name column 1
+zeale_asvseq <- rownames_to_column(zeale_asvseq, var = "asv_code")
+
+# add amplicon information
+zeale_asvseq  <- mutate(zeale_asvseq, amplicon = "zeale")
+
+# align column names for merging
+zeale_asvseq <- zeale_asvseq %>% dplyr::rename(asv_seq = zeale_seq.data)
+
+# merge data into a single dataframe
+all_asvseq <-  rbind(zeale_asvseq)
+```
+
+```{r}
+# merge ALL data into a single dataframe
+final_df <- left_join(all_read_df, all_asvseq, by = "asv_code")
+
+# remove columns without data
+final_df <- na.omit(final_df)
+
+final_df$Taxon <- gsub("k__", "", final_df$Taxon)
+final_df$Taxon <- gsub("p__", "", final_df$Taxon)
+final_df$Taxon <- gsub("c__", "", final_df$Taxon)
+final_df$Taxon <- gsub("o__", "", final_df$Taxon)
+final_df$Taxon <- gsub("f__", "", final_df$Taxon)
+final_df$Taxon <- gsub("g__", "", final_df$Taxon)
+final_df$Taxon <- gsub("s__", "", final_df$Taxon)
+final_df$Taxon <- gsub("_", " ", final_df$Taxon)
+
+# place taxonomic data in separate columns
+final_df <- separate(final_df, Taxon, into = c("kingdom", "phylum", "class", "order", "family", "genus","species"), sep = ";",  fill = "right")
+
+head(final_df)
+```
+
+```{r}
+# save dataframe
+write.csv(final_df, file = here("bat_diet/zeale_final_data_summary.csv"), row.names = FALSE)
+```
+
+```{r}
+wd1 <- "~/git/metabarcoding_workflow_MiSeq22/bat_diet"
+
+# read in .csv files with bold barcodeID engine results.
+bold_results <- read.csv(paste0(wd1, "/Zeale_asv_bold_search.csv"))
+
+# rename all results to match other dataframes
+bold_results <- bold_results %>%
+  dplyr::rename(asv_code = Query.ID) %>%
+  dplyr::rename(perc_identity = ID.)
+
+#  extract 'bin_url' and place in a new column
+bold_results <- bold_results %>%
+  mutate(bin_uri = str_extract(PID..BIN., "(?<=:)(.*?)(?=])"))
+
+bold_results <- bold_results %>%
+  filter(bin_uri != "ADC3402")
+```
+
+```{r}
+## summarize the bold data keeping the highest value for ID (note this doesn't always give the lowest taxonomy, just the best matching record). Remove PID..BIN. column so duplicate asv_code can be removed.
+bold_results <- bold_results %>%
+  select(-"PID..BIN.")
+
+# summarise so there is one  asv_code per row
+bold_results_sum <- bold_results %>%
+  group_by(asv_code) %>%
+  slice_max(order_by = perc_identity, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  distinct(asv_code, .keep_all = TRUE)
+
+final_df <- bold_results_sum %>%
+  select(asv_code, Phylum, Class, Order, Family, Genus, Species, bin_uri) %>%
+  left_join(final_df, by = "asv_code")
+
+```
+```
+

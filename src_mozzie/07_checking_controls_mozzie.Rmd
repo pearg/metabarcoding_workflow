@@ -1,0 +1,69 @@
+---
+title: "controls check"
+output: html_notebook
+---
+
+```{r}
+# Load the required libraries
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(readxl)
+library(here)
+```
+
+These scripts check the MAR2T internal control for matching species dectections from each MiSeq runs
+
+```{r}
+#what miseq run are you working on:
+miseq_folder <- "miseq20"
+
+#read in MAR2T table to check runs
+miseq_controls_long <- read.csv(here::here("results/final_data_summaries", paste0(miseq_folder,"_CONTROLS_long_format_13_09_2024.csv"))) 
+mart2_control_data <- readxl::read_excel(here::here("~/Documents/MAR2_metabarcoding_control_site.xlsx"))
+```
+
+```{r}
+# Step 3: Pivot wider to transform back to wide format
+miseq_controls <- miseq_controls_long %>%
+  select(-sample, -replicate, -asv_code, -amplicon, -asv_seq, -Consensus, -threshold) %>%
+  pivot_wider(
+    names_from = site,
+    values_from = c(reads),  # Include both 'reads' and 'max_p_identity'
+    values_fn = list(reads = sum),   # Apply sum to 'reads' and max to 'max_p_identity'
+  )
+
+# List of columns to group by
+group_cols <- c('kingdom', 'phylum', 'class', 'order', 'family', 'genus', 'species')
+
+# Identify the columns that are site_per (excluding group columns and max_p_identity)
+site_cols <- setdiff(colnames(miseq_controls), c(group_cols, 'max_p_identity'))
+
+# Collapse rows by kingdom, phylum, class, order, family, genus, species
+miseq_controls_df <- miseq_controls %>%
+  group_by(across(all_of(group_cols))) %>%
+  summarise(
+    max_p_identity = max(max_p_identity, na.rm = TRUE),  # Get max value of max_p_identity
+    across(all_of(site_cols), function(x) sum(x, na.rm = TRUE)),  # Sum the values for the site_per columns
+    .groups = 'drop'
+  )
+
+ print(miseq_controls_df)
+
+```
+
+
+```{r}
+# Checking that taxa expected in the 
+common_species <- intersect(miseq_controls_df$species, mart2_control_data$species)
+
+# Species unique to dataframe1
+unique_to_miseq_conrols <- setdiff(miseq_controls_df$species, mart2_control_data$species)
+
+print(unique_to_miseq_conrols)                                   
+
+# Species unique to dataframe2
+unique_to_mart2_control_data <- setdiff(mart2_control_data$species, miseq_controls_df$species)
+```
+If the output only shows the "CONTROL SPIKE", all species have been detected. Your miseq run has detected what was expected in the control sample. If Girardia sinensis that's okay as there was a flatworm in the sample but it isn't always detected.
+

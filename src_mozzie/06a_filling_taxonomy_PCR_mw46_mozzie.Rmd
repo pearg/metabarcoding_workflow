@@ -1,0 +1,1042 @@
+---
+title: "unmatched_checks_BOLDv5"
+author: "MCarew"
+date: "2025-04-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+ is designed to filling missing taxonomic assignments and making corrections to taxonomic assignments that require updating to the most up to date DNA barcode reference libraries using a vetted library of asv taxonomic identifications (SECTION 1)
+
+SECTION 1
+# load libraries
+```{r}
+library(stringr)
+library(dplyr)
+library(here)
+```
+
+
+```{r}
+# read in current asv library
+file_path <- here::here("asv_source_files_MC/asv_library_corrected.xlsx")
+
+# Get the names of the sheets
+sheet_names <- readxl::excel_sheets(file_path)
+
+# Read the sheets into as dataframes
+asv_lib <- readxl::read_excel(file_path, sheet = sheet_names[1])
+
+max_p_updates <- readxl::read_excel(file_path, sheet = sheet_names[2])  # if required
+
+bin_uris <- readxl::read_excel(file_path, sheet = sheet_names[3])  # if required
+
+# make a df of unique bins with names
+
+bin_uris <- bin_uris %>%
+  filter(!grepl("-", bin_uri)) %>%
+  filter(!is.na(species))
+
+bin_uris_no_dups <- bin_uris %>%
+  group_by(bin_uri) %>%
+  filter(n() == 1) %>%
+  ungroup() %>%
+  arrange(bin_uri)
+
+# MC_cks <- read.csv(here::here("asv_source_files_MC/all_mc_checks.csv"))
+# 
+# MC_cks <- MC_cks %>%
+#   dplyr::rename(bin_uri = bold_bin_uri)
+# 
+# dup_bins_fix <- dup_bins %>%
+#   left_join(
+#     MC_cks %>% select(bin_uri, checked_species_name),
+#     by = "bin_uri"
+#   ) %>% distinct()
+
+#write.csv(dup_bins_fix, (here::here("asv_source_files_MC/dup_bins_fix.csv")
+
+bins_dup_fix <- read.csv(here::here("asv_source_files_MC/dup_bins_fixed.csv"))
+
+bin_uris_no_dups <- bin_uris_no_dups <- bin_uris_no_dups %>%
+  filter(!bin_uri %in% bins_dup_fix$bin_uri)
+                           
+bins_no_name_tax <- read.csv(here::here("asv_source_files_MC/bins_no_species_name.csv"))
+
+bins_no_name <- bins_no_name_tax  %>%  select(species, bin_uri)                     
+                           
+bin_uri_unq <- rbind(bin_uris_no_dups, bins_dup_fix, bins_no_name) #%>% distinct(bin_uri, species, .keep_all = TRUE) #2473 unique bins
+
+any(duplicated(bin_uri_unq$bin_uri))
+
+write.csv(bin_uri_unq, here::here("asv_source_files_MC/bin_uri_unq2_10_25.csv"))
+ 
+# Fix naming issues i.e. same species with different taxonomy. needed to be manually checked
+asv_tax_names_fix <- read.csv(here::here("asv_source_files_MC/asv_tax_fixed_names.csv"))
+
+#add theses changes to the library                             
+asv_lib <- asv_lib %>%
+  left_join(
+    asv_tax_names_fix %>%
+      select(species, kingdom, phylum, class, order, family, genus),
+    by = "species"
+  ) %>%
+  mutate(
+    kingdom = coalesce(kingdom.y, kingdom.x),
+    phylum = coalesce(phylum.y, phylum.x),
+    class = coalesce(class.y, class.x),
+    order = coalesce(order.y, order.x),
+    family = coalesce(family.y, family.x),
+    genus = coalesce(genus.y, genus.x)
+  ) %>%
+  select(-ends_with(".x"), -ends_with(".y"))
+
+mw_mw46 <- read.csv(here::here("results/final_data_summaries_3_amp/MW_data_vsearch_filled_summary_25_06_2025.csv"))
+```
+
+
+# add data from asv library into reads/asv dataframe
+```{r}
+# Step 1: Identify common ASVs
+common_ids <- intersect(asv_lib$asv_code, mw_mw46$asv_code)
+
+# Step 2: Split mw_mw46 into those with and without updates
+df1 <- mw_mw46 %>% filter(asv_code %in% common_ids)
+df3 <- mw_mw46 %>% filter(!asv_code %in% common_ids)
+
+# Step 3: Get only matching rows from asv_lib
+df2 <- asv_lib %>% 
+  filter(asv_code %in% common_ids) %>%
+  select(asv_code, kingdom, phylum, class, order, family, genus, species, max_p_identity)
+
+# Step 4: Rename existing taxonomic columns in df1 to preserve them
+df1_renamed <- df1 %>%
+  rename_with(~ paste0(.x, "_orig"), c(kingdom, phylum, class, order, family, genus, species, max_p_identity))
+
+# Step 5: Join with updated taxonomy from df2
+df1_updated <- df1_renamed %>%
+  left_join(df2, by = "asv_code")
+
+# Step 6: Replace old values only where new ones are available
+df1_final <- df1_updated %>%
+  mutate(
+    kingdom        = coalesce(kingdom, kingdom_orig),
+    phylum         = coalesce(phylum, phylum_orig),
+    class          = coalesce(class, class_orig),
+    order          = coalesce(order, order_orig),
+    family         = coalesce(family, family_orig),
+    genus          = coalesce(genus, genus_orig),
+    species        = coalesce(species, species_orig),
+    max_p_identity = coalesce(max_p_identity, max_p_identity_orig)
+  ) %>%
+  select(-ends_with("_orig"))  # Drop the preserved columns
+
+# Step 7: Recombine with ASVs that had no update
+mw_mw46_fill <- bind_rows(df1_final, df3) %>%
+ select(asv_code, kingdom, phylum, class, order, family, genus, species, Consensus, max_p_identity, threshold, everything())
+```
+
+# filtering asv_codes not in current asv_library subset out data with species ids
+```{r}
+# These two lines split the data based on whether max_p_identity and species names are present or missing
+# Consider a record filled only if species is assigned and max_p_identity >= 97
+mw_mw46_filled1 <- mw_mw46_fill %>%
+  filter(!is.na(max_p_identity) & max_p_identity >= 97 & species != "") %>% select(asv_code, kingdom, phylum, class, order, family, genus, species, Consensus, max_p_identity, threshold, everything()) %>%
+  relocate(asv_seq, amplicon, .after = last_col()) #3184
+
+# Records not yet filled (e.g., species is missing OR identity is too low or missing)
+mw_mw46_not_filled <- mw_mw46_fill %>%
+  filter(is.na(max_p_identity) | max_p_identity < 97 | species == "") #2310
+
+# save for bold search
+# write_csv(mw_mw46_not_filled, "~/uomShare/wergStaff/MelCarew/git-data/Spring_2018_DNA_metabarcoding_data/metabarcoding_workflow_trial/mw_mw46_not_filled.csv")
+```
+
+# searching new asv_codes on bold first
+```{r}
+# read in .csv files with bold barcodeID engine results.
+bold_results1 <- read.csv(here::here("BOLD_asv_searches/MW46Barcode ID - BOLD - db_all1_1000.csv"))
+bold_results2 <- read.csv(here::here("BOLD_asv_searches/MW46Barcode ID - BOLD - db_all1001_2000.csv"))
+bold_results3 <- read.csv(here::here("BOLD_asv_searches/MW46Barcode ID - BOLD - db_all2001_end.csv"))
+bold_results4 <- read.csv(here::here("BOLD_asv_searches/BOLD_mw46_3_missed.csv"))
+
+
+# combine all results into a single file
+bold_results_all <- rbind(bold_results1, bold_results2, bold_results3, bold_results4)
+
+# rename all results to match other dataframes
+bold_results_all <- bold_results_all %>%
+  dplyr::rename(asv_code = Query.ID,
+         species_bold = Species,
+         genus = Genus,
+         family = Family,
+         order = Order, 
+         class = Class,
+         phylum = Phylum
+         ) %>%
+  mutate(kingdom = "") %>%
+  relocate(kingdom, .before = phylum)
+
+# Method using extract 'bin_url' and place in a new column
+bold_results_all <- bold_results_all %>%
+  mutate(bin_uri = str_extract(PID..BIN., "(?<=:)(.*?)(?=])"))
+
+bold_results_all <- bold_results_all %>%
+  left_join(
+    bin_uri_unq %>% select(bin_uri, species),
+    by = "bin_uri"
+  )
+```
+
+```{r}
+# summarize the bold data keeping the highest value for ID. Remove PID..BIN. column so duplicate bin_uri_unq can be removed.
+bold_results_all <- bold_results_all %>%
+  select(-"PID..BIN.")
+
+bold_results_sum <- bold_results_all %>%
+  group_by(asv_code) %>%
+  # Flag entries with a usable BIN (non-NA and ID. >= 97)
+  mutate(has_good_bin = !is.na(bin_uri) & ID. >= 97) %>%
+  # Arrange so the preferred match comes first
+  arrange(asv_code, desc(has_good_bin), desc(ID.)) %>%
+  # Keep the top-ranked record per asv_code
+  slice_head(n = 1) %>%
+  ungroup() %>%
+  # Rename species to species_bin for tracking
+  dplyr::rename(species_bin = species) %>%
+  # Fill species_bold with species_bin if available
+  mutate(
+    species_bold = ifelse(!is.na(species_bin), species_bin, species_bold)
+  ) %>%
+  # Final renaming
+  dplyr::rename(
+    species = species_bold,
+    max_p_identity = ID.
+  )
+
+# bold_results_sum <- bold_results_sum %>%
+#   mutate(species_bold = ifelse(!is.na(species_bin), species_bin, species_bold)) %>%
+#   dplyr::rename(species = species_bold,
+#                 max_p_identity = ID.) 
+
+# add correct taxonomic fields
+# make a taxonomy df
+priv_tax <- priv_lib %>%
+  select(kingdom, phylum, class, order, family, genus, species) %>%
+  distinct()
+
+asv_tax <- asv_lib %>%
+  select(kingdom, phylum, class, order, family, genus, species) %>%
+filter(!(species == "Chironominae sp. MC-A2" & !is.na(genus) & genus != "")) %>%
+  mutate(family = case_when(genus == "Austrocyphon" ~ "Scirtidae",
+    TRUE ~ family))  %>%  distinct()
+
+asv_tax_all <- bind_rows(priv_tax, asv_tax) %>%
+  filter(!is.na(species) & species != "")  %>%
+  distinct(species, .keep_all = TRUE)
+
+# # Step 1: Identify duplicated species
+# asv_tax_dups <- duplicated(asv_tax$species)
+# 
+# # Step 2: Get the unique names of the duplicated species
+# asv_tax_dups <- unique(asv_tax$species[asv_tax_dups])
+# asv_tax_dups_full <- asv_tax[asv_tax$species %in% asv_tax_dups, ]
+# 
+# write.csv(asv_tax_dups_full, "~/uomShare/wergStaff/MelCarew/DNAbarcode_reference_databases/asv_tax_dups_full.csv")
+
+# Step 1: Ensure species columns are character
+# bold_results_sum <- bold_results_sum %>%
+#   mutate(species = as.character(species))
+# 
+# asv_tax_all <- asv_tax_all %>%
+
+# read in taxa not in asv library
+asv_missing_tax <- read.csv(here::here("BOLD_asv_searches/asv_missing_tax.csv"))
+
+bold_results_sum <- bold_results_sum %>%
+  left_join(
+    asv_missing_tax %>%
+      select(asv_code,
+             kingdom_new = kingdom,
+             phylum_new  = phylum,
+             class_new   = class,
+             order_new   = order,
+             family_new  = family,
+             genus_new   = genus,
+             species_new = species),
+    by = "asv_code"
+  ) %>%
+  mutate(
+    kingdom = if_else(!is.na(kingdom_new), kingdom_new, kingdom),
+    phylum  = if_else(!is.na(phylum_new),  phylum_new,  phylum),
+    class   = if_else(!is.na(class_new),   class_new,   class),
+    order   = if_else(!is.na(order_new),   order_new,   order),
+    family  = if_else(!is.na(family_new),  family_new,  family),
+    genus   = if_else(!is.na(genus_new),   genus_new,   genus),
+    species = if_else(!is.na(species_new), species_new, species)
+  ) %>%
+  select(-ends_with("_new"))
+
+bold_results_sum <- bold_results_sum %>%
+  left_join(
+    asv_tax_all %>%
+      select(species,
+             kingdom_tax = kingdom,
+             phylum_tax  = phylum,
+             class_tax   = class,
+             order_tax   = order,
+             family_tax  = family,
+             genus_tax   = genus),
+    by = "species"
+  ) %>%
+  mutate(
+    kingdom = coalesce(kingdom_tax, kingdom),
+    phylum  = coalesce(phylum_tax,  phylum),
+    class   = coalesce(class_tax,   class),
+    order   = coalesce(order_tax,   order),
+    family  = coalesce(family_tax,  family),
+    genus   = coalesce(genus_tax,   genus)
+  ) %>%
+  select(-ends_with("_tax"))
+
+# tidy up naming L1
+bold_results_sum <- bold_results_sum %>%
+  mutate(
+    species = sub(" CEG$", "", species), # Remove trailing " CEG" 
+     species = sub(" CEB$", "", species), # Remove trailing " CEB" 
+     species = sub(" L1$", "", species), # Remove trailing " L1 
+    species = case_when(
+      species == "Lichenaula sp. ANIC2" ~ "Lichenaula sp. B-AAX4878",
+      species == "Paropsisterna TFIC_sp_1" ~ "Paropsisterna sp. B-ADX1705",
+      TRUE ~ species
+    )
+  ) %>%
+  mutate(kingdom = case_when(
+    phylum == "Proteobacteria" ~ "Prokaryota",
+    phylum == "Actinobacteria" ~ "Prokaryota",
+    phylum == "Arthropoda"     ~ "Eukaryota",
+    phylum == "Annelida"     ~ "Eukaryota",
+    phylum == "Streptophyta"     ~ "Eukaryota",
+    phylum == "Chlorophyta"     ~ "Eukaryota",
+     phylum == "Ascomycota"     ~ "Eukaryota",
+     phylum == "Heterokontophyta"     ~ "Eukaryota",
+     phylum == "Unspecified"     ~ "Unassigned",
+     phylum == "Ochrophyta"     ~ "Eukaryota",
+     phylum == "Rotifera"     ~ "Eukaryota",
+    phylum == "Mollusca"     ~ "Eukaryota",
+    phylum == "Porifera"     ~ "Eukaryota",
+    phylum == "Cryptophyta"     ~ "Eukaryota",
+    TRUE  ~ kingdom
+  ))
+
+# can't get these to update using df
+bold_results_sum <- bold_results_sum %>%
+  mutate(
+    species = case_when(
+      asv_code == "e7274a63ed58d5004381d9374d32c1ed" ~ "Garrha sp. B-ABU9552",
+      TRUE ~ species),
+    genus = case_when(
+      asv_code == "e7274a63ed58d5004381d9374d32c1ed" ~ "Garrha",
+      TRUE ~ genus))
+      
+bold_results_sum <- bold_results_sum %>% select(asv_code, kingdom, phylum, class, order, family, genus, species, max_p_identity) #933 results updated
+```
+
+# add bold search results to dataframe
+```{r}
+# Step 1: Identify common ASVs
+common_ids <- intersect(bold_results_sum$asv_code, mw_mw46_not_filled$asv_code)
+
+# Step 2: Split mw_mw46_not_filled into matched and unmatched sets
+df1 <- mw_mw46_not_filled %>% filter(asv_code %in% common_ids)
+mw_mw46_not_filled2 <- mw_mw46_not_filled %>% filter(!asv_code %in% common_ids)
+
+# Step 3: Filter bold_results_sum to matching ASVs
+df2 <- bold_results_sum %>% filter(asv_code %in% common_ids)
+
+# Step 4: Rename taxonomic columns in df1 to preserve them
+df1_renamed <- df1 %>%
+  rename_with(~ paste0(.x, "_orig"), c(kingdom, phylum, class, order, family, genus, species, max_p_identity))
+
+# Step 5: Join with bold data (no suffixes needed, already renamed original cols)
+df1_updated <- df1_renamed %>%
+  left_join(df2, by = "asv_code")
+
+# Step 6: Overwrite original taxonomic fields with bold results where available
+mw_mw46_filled2 <- df1_updated %>%
+  mutate(
+    kingdom        = coalesce(kingdom, kingdom_orig),
+    phylum         = coalesce(phylum, phylum_orig),
+    class          = coalesce(class, class_orig),
+    order          = coalesce(order, order_orig),
+    family         = coalesce(family, family_orig),
+    genus          = coalesce(genus, genus_orig),
+    species        = coalesce(species, species_orig),
+    max_p_identity = coalesce(max_p_identity, max_p_identity_orig)
+  ) %>%
+  select(-ends_with("_orig"))  # remove preserved columns
+
+# Step 7: Recombine with unmatched data
+mw_mw46_filled2 <- mw_mw46_filled2 %>%
+  select(asv_code, kingdom, phylum, class, order, family, genus, species, Consensus, max_p_identity, threshold, everything()) %>%
+  relocate(asv_seq, amplicon, .after = last_col())
+```
+
+```{r}
+#write.csv(mw_mw46_not_filled2,here::here("BOLD_asv_searches/mw_mw46_still_not_filled3.csv" ))
+```
+
+```{r}
+# subset out data with no species match for checking agains privat libray and genbank
+# mw_mw46_filled_no_bold <- mw_mw46_filled %>%
+#   filter(max_p_identity <= 97 | is.na(max_p_identity))
+# 
+# # data with out a species match on bold
+#  write.csv(mw_mw46_filled_no_bold, "~/uomShare/wergStaff/MelCarew/git-data/Spring_2018_DNA_metabarcoding_data/mw_mw46_filled_no_bold.csv")
+```
+
+```{r}
+# read in data from searches
+mw_mw46_priv_search <- read.csv(here::here("geneious_search/geneious_mw46mw_not_bold_private.csv"))
+
+# STEP 1: Preprocess and filter
+mw_mw46_priv_search <- mw_mw46_priv_search %>%
+  dplyr::rename(
+    max_p_identity = X..Pairwise.Identity,
+    coverage = Query.coverage,
+    asv_code = Query
+  ) %>%
+  mutate(
+    Name = gsub("_", " ", Name),
+    species = sub("-[^-]+$", "", Name),
+    id = sub(".*-", "", Name),
+    max_p_identity = as.numeric(gsub("%", "", max_p_identity)),
+    coverage = as.numeric(gsub("%", "", coverage))
+  ) %>%
+  filter(max_p_identity >= 97, coverage > 70)
+
+# STEP 2: Add fallback taxonomy info (with your rules)
+mw_mw46_priv_search_gt97 <- mw_mw46_priv_search %>%
+  mutate(
+    fallback_kingdom = "Eukaryota",
+    fallback_phylum = if_else(grepl("Caenidae|Notonemouridae", species), "Arthropoda", NA_character_),
+    fallback_class  = if_else(grepl("Caenidae|Notonemouridae", species), "Insecta", NA_character_),
+    fallback_order  = case_when(
+      grepl("Caenidae", species) ~ "Ephemeroptera",
+      grepl("Notonemouridae", species) ~ "Plecoptera",
+      TRUE ~ NA_character_
+    ),
+    fallback_family = case_when(
+      grepl("Caenidae", species) ~ "Caenidae",
+      grepl("Notonemouridae", species) ~ "Notonemouridae",
+      TRUE ~ NA_character_
+    ),
+    fallback_genus = ""
+  )
+
+# STEP 3: Join taxonomy from priv_lib
+mw_mw46_priv_search_gt97 <- mw_mw46_priv_search_gt97 %>%
+  left_join(priv_lib %>% select(id, kingdom, phylum, class, order, family, genus), by = "id") %>%
+  mutate(
+    kingdom = coalesce(kingdom, fallback_kingdom),
+    phylum  = coalesce(phylum,  fallback_phylum),
+    class   = coalesce(class,   fallback_class),
+    order   = coalesce(order,   fallback_order),
+    family  = coalesce(family,  fallback_family),
+    genus   = coalesce(genus,   fallback_genus)
+  ) %>%
+  select(-starts_with("fallback_"))
+
+```
+
+```{r}
+# Step 1: Identify common ASVs
+common_ids <- intersect(mw_mw46_priv_search_gt97$asv_code, mw_mw46_not_filled2$asv_code)
+
+# Step 2: Split mw_mw46_not_filled2 into matching and non-matching sets
+df1 <- mw_mw46_not_filled2 %>% filter(asv_code %in% common_ids)
+mw_mw46_not_filled3 <- mw_mw46_not_filled2 %>% filter(!asv_code %in% common_ids)
+
+# Step 3: Filter mw_mw46_priv_search_gt97 for matching ASVs
+df2 <- mw_mw46_priv_search_gt97 %>% filter(asv_code %in% common_ids)
+
+# Step 4: Merge on asv_code (add suffixes to distinguish overlapping columns)
+df1_updated <- df1 %>%
+  left_join(df2, by = "asv_code", suffix = c("_final", "_trunc"))
+
+# Step 5: Replace taxonomy fields and similarity from truncated version
+mw_mw46_filled3 <- df1_updated %>%
+  mutate(
+    species         = species_trunc,
+    genus           = genus_trunc,
+    family          = family_trunc,
+    order           = order_trunc,
+    class           = class_trunc,
+    phylum          = phylum_trunc,
+    kingdom         = kingdom_trunc,
+    max_p_identity  = max_p_identity_trunc
+  ) %>%
+  select(-ends_with("_trunc"), -ends_with("_final"), -Name, -coverage, -id)  # Remove helper/join columns
+
+# Step 6: Recombine with the entries that had no update
+mw_mw46_filled3 <- mw_mw46_filled3 %>%
+  select(asv_code, kingdom, phylum, class, order, family, genus, species, Consensus, max_p_identity, threshold, everything()) %>%
+  relocate(asv_seq, amplicon, .after = last_col())
+```
+
+```{r}
+# mw_mw46_filled_no_bold_priv <- mw_mw46_filled %>%
+#   filter(max_p_identity <= 97 | is.na(max_p_identity))
+# 
+# write.csv(mw_mw46_filled_no_boLd_priv, "~/uomShare/wergStaff/MelCarew/git-data/Spring_2018_DNA_metabarcoding_data/mw_mw46_filled_no_bold_priv.csv")
+```
+
+# results only on Genbank
+```{r}
+gb_search_results <- read.csv(here::here("gb_searches/MW46_genbank search.csv"))
+
+# Step 1: Identify common ASVs
+common_ids <- intersect(gb_search_results$asv_code, mw_mw46_not_filled3$asv_code)
+
+# Step 2: Split original data
+df1 <- mw_mw46_not_filled3 %>% filter(asv_code %in% common_ids)
+df3 <- mw_mw46_not_filled3 %>% filter(!asv_code %in% common_ids)
+
+# Step 3: Join with asv_lib to get updated values
+df2 <- gb_search_results %>% filter(asv_code %in% common_ids)
+
+# Step 4: Merge on asv_code (adding suffixes to distinguish columns)
+df1_updated <- df1 %>%
+  left_join(df2, by = "asv_code", suffix = c("_final", "_trunc"))
+
+# Step 5: Replace taxonomy fields and match from truncated version
+df1_updated <- df1_updated %>%
+  mutate(species = species_trunc,
+    genus   = genus_trunc,
+    family  = family_trunc,
+    order   = order_trunc,
+    class   = class_trunc,
+    phylum  = phylum_trunc,
+    kingdom = kingdom_trunc,
+    max_p_identity =  max_p_identity_trunc)  %>%
+  select(-ends_with("_trunc"), -ends_with("_final"))  # Clean up extra columns
+
+# Step 6: Recombine with the rest of the mw_mw46 that had no update
+mw_mw46_filled4 <- bind_rows(df1_updated, df3)
+
+mw_mw46_filled4 <- mw_mw46_filled4 %>%
+ select(asv_code, kingdom, phylum, class, order, family, genus, species, Consensus, max_p_identity, threshold, everything()) %>%
+  relocate(asv_seq, amplicon, .after = last_col())
+```
+
+# bring together final filled dataframe
+```{r}
+# Combine filled dataframes
+mw_final_df1_filled <- rbind(mw_mw46_filled1, mw_mw46_filled2, mw_mw46_filled3, mw_mw46_filled4)
+
+# Replace NA with ""
+mw_final_df1_filled[is.na(mw_final_df1_filled)] <- ""
+
+# Add 'Unassigned' to empty kingdom
+mw_final_df1_filled <- mw_final_df1_filled %>%
+  mutate(
+    kingdom = if_else(kingdom == "", "Unassigned", kingdom),
+    max_p_identity = if_else(is.na(as.numeric(max_p_identity)), 80, as.numeric(max_p_identity))
+  ) %>%
+ select(asv_code, kingdom, phylum, class, order, family, genus, species, Consensus, max_p_identity, threshold, everything(), asv_seq, amplicon)
+
+# Convert taxonomic fields to character and max_p_identity to numeric
+mw_final_df1_filled <- mw_final_df1_filled %>%
+  mutate(across(c(species, genus, family, order), as.character)) %>%
+  mutate(max_p_identity = as.numeric(max_p_identity)) 
+
+# remove reps with low reads
+mw_final_df1_filled <- mw_final_df1_filled %>% select(-DAL15SS18Hrep2, -LER61SS18Irep2, -LGL13SS18Irep1, -TAR29SS18Hrep2, -MCR43SS18Irep1, -LTL368SS18Hrep2)
+
+# Final filtered output
+mw_mw46_asv_tax <- mw_final_df1_filled %>%
+  select(asv_code, kingdom, phylum, class, order, family, genus, species, max_p_identity) %>%
+  filter(!is.na(max_p_identity) & max_p_identity != "") 
+  
+# write.csv(mw_mw46_asv_tax, "~/uomShare/wergStaff/MelCarew/git-data/metabarcoding_workflow/miseq5/metabarcoding_workflow/final_data_summaries/mw_mw46_asv_tax.csv")
+```
+
+
+```{r}
+# Update 'species' column to only include names if max threshold is above 97
+mw_final_df1_filled <-  mw_final_df1_filled %>%
+  dplyr::mutate(species = if_else(max_p_identity < 97, "", species))
+
+# Update 'genus' column to only include names if max threshold is above 95
+mw_final_df1_filled <-  mw_final_df1_filled %>%
+  dplyr::mutate(genus = if_else(max_p_identity < 95, "", genus))
+
+# Update 'family' column to only include names if max threshold is above 90
+mw_final_df1_filled <-  mw_final_df1_filled %>%
+  dplyr::mutate(family = if_else(max_p_identity < 90, "", family))
+
+# Update 'order' column to only include names if max threshold is above 80
+mw_final_df1_filled <-  mw_final_df1_filled %>%
+  dplyr::mutate(order = if_else(max_p_identity < 85, "",order))
+```
+
+# save filled file
+```{r}
+# Generate timestamp
+timestamp <- format(Sys.time(), "%d_%m_%Y")
+
+# Create the file name with timestamp
+file_name <- here::here("results/final_data_summaries", paste0("MW_data_vsearch_filled_summary_", timestamp, ".csv"))
+
+# Save the dataframe
+write.csv(mw_final_df1_filled, file = file_name, row.names = FALSE)
+
+```
+
+#Check all invert asv have been assigned and checked
+```{r}
+# pull out new asvs without species names
+no_species_97 <- subset(mw_final_df1_filled, 
+                        as.numeric(max_p_identity) >= 97 & 
+                        (is.na(species) | species == "")) # no inverts
+
+```
+
+# new asv's to asv library to check re-runs
+```{r}
+# new asv's not in current asv library
+# asvs not in asv_lib
+asv_diff <- mw_final_df1_filled %>%
+  filter(!asv_code %in% asv_lib$asv_code) # before filtering 2954 new asvs
+
+# select asv_lib columns
+new_asv_for_asv_lib <- asv_diff %>%
+  select(asv_code, kingdom, phylum, class, order, family, genus, species,
+         max_p_identity, asv_seq, amplicon) %>%
+  filter(!kingdom == "Unassigned") %>% dplyr::rename("asv_sequence" = "asv_seq") %>%  select(asv_code, kingdom, phylum, class, order, family, genus, species, max_p_identity, asv_sequence, amplicon) #1055 after removing unassigned
+
+# Update 'species' column to only include names if max threshold is above 97
+new_asv_for_asv_lib <-  new_asv_for_asv_lib %>%
+  dplyr::mutate(species = if_else(max_p_identity < 97, "", species))
+
+# Update 'genus' column to only include names if max threshold is above 95
+new_asv_for_asv_lib <-  new_asv_for_asv_lib %>%
+  dplyr::mutate(genus = if_else(max_p_identity < 95, "", genus))
+
+# Update 'family' column to only include names if max threshold is above 90
+new_asv_for_asv_lib <-  new_asv_for_asv_lib %>%
+  dplyr::mutate(family = if_else(max_p_identity < 90, "", family))
+
+# Update 'order' column to only include names if max threshold is above 80
+new_asv_for_asv_lib <-  new_asv_for_asv_lib %>%
+  dplyr::mutate(order = if_else(max_p_identity < 85, "",order))
+
+asv_lib_all <- rbind(asv_lib, new_asv_for_asv_lib)
+```
+_________________________
+
+## re-run samples
+```{r}
+# read in vsearch results
+mw_final_df2  <- read.csv("~/git/metabarcoding_workflow_MW_reruns/results/final_data_summaries_3amp/MW_vsearch_data_summary_re-reruns_18_06_2025.csv")
+```
+
+# rename columns and add in asv library all taxonomy
+```{r}
+# adjust columns
+mw_final_df2 <-mw_final_df2 %>%
+  dplyr::rename(
+    DAL15SS18Hrep2 = DAL15SS18H,
+    LER61SS18Irep2 = LER61SS18I,
+    LGL13SS18Irep1 = LGL13SS18I,
+    TAR29SS18Hrep2 = TAR29SS18H,
+    MCR43SS18Irep1 = MCR93SS18I,
+    LTL368SS18Hrep2 = LTL368SS18H
+  ) %>%
+  select(-COIExtract1, -Dros)
+
+# Step 1: Identify common ASVs
+common_ids <- intersect(asv_lib_all$asv_code, mw_final_df2$asv_code)
+
+# Step 2: Split original data
+df1r <- mw_final_df2 %>% filter(asv_code %in% common_ids)
+mw_final_df2_not_filled <- mw_final_df2 %>% filter(!asv_code %in% common_ids)
+
+# Step 3: Join with asv_lib to get updated values
+df2r <- asv_lib_all %>% filter(asv_code %in% common_ids)
+
+df1r_updated <- df1r %>%
+  left_join(df2r, by = "asv_code", suffix = c("_final", "_trunc"))
+
+# Step 4: Replace taxonomy fields and match from truncated version
+df1r_updated <- df1r_updated %>%
+  mutate(species = species_trunc,
+    genus   = genus_trunc,
+    family  = family_trunc,
+    order   = order_trunc,
+    class   = class_trunc,
+    phylum  = phylum_trunc,
+    kingdom = kingdom_trunc,
+    amplicon = amplicon_trunc,
+    max_p_identity =  max_p_identity_trunc)  %>%
+  select(-ends_with("_trunc"), -ends_with("_final"))  # Clean up extra columns
+
+df1r_updated <- df1r_updated %>%
+  mutate(max_p_identity = as.numeric(max_p_identity))
+
+mw_final_df2_not_filled <- mw_final_df2_not_filled %>%
+  mutate(max_p_identity = as.numeric(max_p_identity))
+
+# Step 6: Recombine with the rest of the final_df that had no update
+# Start with df1r_updated and assign to mw_mw46_fill2
+mw_mw46rr_filled1 <- df1r_updated %>% select(asv_code, kingdom, phylum, class, order, family, genus, species, Consensus, max_p_identity, threshold, everything()) %>%  select(-asv_sequence) # 174 filled
+```
+
+# Finding any new asvs in re-runs and adding classification
+```{r}
+#write.csv(mw_final_df2_not_filled, here::here("geneious_search/mw_final_df2_not_filled.csv"))
+
+# read in bold results for new asv's in re-runs
+rr_bold_results1 <- read.csv(here::here("BOLD_asv_searches/MW46Barcode ID - BOLD - reruns.csv"))
+rr_bold_results2 <- read.csv(here::here("BOLD_asv_searches/BOLD_mw46_3rr_missed.csv"))
+
+rr_bold_results <- rbind(rr_bold_results1, rr_bold_results2)
+
+# rename all results to match other dataframes
+rr_bold_results <- rr_bold_results %>%
+  dplyr::rename(asv_code = Query.ID,
+         species_bold = Species,
+         genus = Genus,
+         family = Family,
+         order = Order,
+         class = Class,
+         phylum = Phylum
+         )
+# Method using extract 'bin_url' and place in a new column
+rr_bold_results <- rr_bold_results %>%
+  mutate(bin_uri = str_extract(PID..BIN., "(?<=:)(.*?)(?=])"))
+
+rr_bold_results <- rr_bold_results %>%
+  left_join(
+    bin_uri_unq %>% select(bin_uri, species),
+    by = "bin_uri"
+  )
+#rr_bold_results <- rr_bold_results %>% dplyr::rename(species_bin = species)
+
+# summarize the bold data keeping the highest value for ID. Remove PID..BIN. column so duplicate bin_uri_unq can be removed.
+
+rr_bold_results_sum <- rr_bold_results %>%
+  group_by(asv_code) %>%
+  # Flag entries with a usable BIN (non-NA and ID. >= 97)
+  mutate(has_good_bin = !is.na(bin_uri) & ID. >= 97) %>%
+  # Arrange so the preferred match comes first
+  arrange(asv_code, desc(has_good_bin), desc(ID.)) %>%
+  # Keep the top-ranked record per asv_code
+  slice_head(n = 1) %>%
+  ungroup() %>%
+  # Rename species to species_bin for tracking
+  dplyr::rename(species_bin = species) %>%
+  # Fill species_bold with species_bin if available
+  mutate(
+    species_bold = ifelse(!is.na(species_bin), species_bin, species_bold)
+  ) %>%
+  # Final renaming
+  dplyr::rename(
+    #species = species_bold,
+    max_p_identity = ID.
+  )
+
+rr_bold_results_sum <- rr_bold_results_sum %>%
+  mutate(
+    species_bold = coalesce(species_bin, species_bold)  # picks species_bin if not NA, else species_bold
+  ) %>%
+  dplyr::rename(
+    species = species_bold,) %>% 
+  mutate(kingdom = "Eukaryota") %>%  # Add 'kingdom' column filled with NA (character)
+  relocate(kingdom, .before = phylum) %>% # Move 'kingdom' before 'phylum'
+  filter(asv_code != "cb3c8c0e3c630e9daddafc4ca759a4c9") %>%
+  mutate(species = ifelse(asv_code == "98bd7821b7f71ac510b40602e1312232", "Neureclipsis napaea", species))
+  
+
+rr_bold_results_sum <- rr_bold_results_sum %>%
+  left_join(
+    asv_missing_tax %>%
+      select(asv_code,
+             kingdom_new = kingdom,
+             phylum_new  = phylum,
+             class_new   = class,
+             order_new   = order,
+             family_new  = family,
+             genus_new   = genus,
+             species_new = species),
+    by = "asv_code"
+  ) %>%
+  mutate(
+    kingdom = if_else(!is.na(kingdom_new), kingdom_new, kingdom),
+    phylum  = if_else(!is.na(phylum_new),  phylum_new,  phylum),
+    class   = if_else(!is.na(class_new),   class_new,   class),
+    order   = if_else(!is.na(order_new),   order_new,   order),
+    family  = if_else(!is.na(family_new),  family_new,  family),
+    genus   = if_else(!is.na(genus_new),   genus_new,   genus),
+    species = if_else(!is.na(species_new), species_new, species)
+  ) %>%
+  select(-ends_with("_new"))
+
+rr_bold_results_sum <- rr_bold_results_sum %>%
+  left_join(
+    asv_tax_all %>%
+      select(species,
+             kingdom_tax = kingdom,
+             phylum_tax  = phylum,
+             class_tax   = class,
+             order_tax   = order,
+             family_tax  = family,
+             genus_tax   = genus),
+    by = "species"
+  ) %>%
+  mutate(
+    kingdom = coalesce(kingdom_tax, kingdom),
+    phylum  = coalesce(phylum_tax,  phylum),
+    class   = coalesce(class_tax,   class),
+    order   = coalesce(order_tax,   order),
+    family  = coalesce(family_tax,  family),
+    genus   = coalesce(genus_tax,   genus)
+  ) %>%
+  select(-ends_with("_tax"))
+
+# tidy up naming L1
+rr_bold_results_sum <- rr_bold_results_sum %>%
+   mutate(
+    species = sub(" CEG$", "", species),  # Remove trailing " CEG"
+    species = sub(" CEB$", "", species),  # Remove trailing " CEB"
+    species = sub(" L1$", "", species),   # Remove trailing " L1"
+    species = case_when(
+      species == "Lichenaula sp. ANIC2" ~ "Lichenaula sp. B-AAX4878",
+      species == "Paropsisterna TFIC_sp_1" ~ "Paropsisterna sp. B-ADX1705",
+      species == "Australopelopia sp. NSWDor17.1.4" ~ "Australopelopia sp. B-AEN1251",
+      species == "Apsectrotanypus sp. TAS17.7.5" ~ "Apsectrotanypus sp. B-AEM4866",
+      species == "Cernosvitoviella sp. CEB" ~ "Cernosvitoviella sp. B-ACV7432",
+      species == "Hydraena sp. NLG-2014" ~ "Hydraena sp. B-AFJ4718",
+      species == "Hermenias sp. E" ~ "Hermenias sp. B-AAZ9873",
+      TRUE ~ species
+    )
+  ) %>%
+  mutate(kingdom = case_when(
+    phylum == "Proteobacteria" ~ "Prokaryota",
+    phylum == "Actinobacteria" ~ "Prokaryota",
+    phylum == "Arthropoda"     ~ "Eukaryota",
+    phylum == "Annelida"     ~ "Eukaryota",
+    phylum == "Streptophyta"     ~ "Eukaryota",
+    phylum == "Chlorophyta"     ~ "Eukaryota",
+    phylum == "Ascomycota"     ~ "Eukaryota",
+    phylum == "Heterokontophyta"     ~ "Eukaryota",
+    phylum == "Unspecified"     ~ "Unassigned",
+    phylum == "Ochrophyta"     ~ "Eukaryota",
+    phylum == "Rotifera"     ~ "Eukaryota",
+    phylum == "Mollusca"     ~ "Eukaryota",
+    phylum == "Porifera"     ~ "Eukaryota",
+    phylum == "Cryptophyta"     ~ "Eukaryota",
+    phylum == "Bacillariophyta"     ~ "Eukaryota",
+    phylum == "Tardigrada"     ~ "Eukaryota",
+    phylum == "Cnidaria"     ~ "Eukaryota",
+    phylum == "Rhodophyta"     ~ "Eukaryota",
+    TRUE  ~ kingdom
+  ))
+
+# 1. Join on asv_code
+df_joined <- mw_final_df2_not_filled %>%
+  left_join(
+    rr_bold_results_sum %>%
+      select(asv_code, kingdom, phylum, class, order, family, genus, species, max_p_identity),
+    by = "asv_code",
+    suffix = c("", "_new")
+  )
+
+# 2. Overwrite columns using coalesce: take new value if available, else keep old
+mw_mw46_rr_filled2 <- df_joined %>%
+  mutate(
+    kingdom        = coalesce(kingdom_new, kingdom),
+    phylum         = coalesce(phylum_new, phylum),
+    class          = coalesce(class_new, class),
+    order          = coalesce(order_new, order),
+    family         = coalesce(family_new, family),
+    genus          = coalesce(genus_new, genus),
+    species        = coalesce(species_new, species),
+    max_p_identity = coalesce(max_p_identity_new, max_p_identity)
+  ) %>%
+  select(-ends_with("_new"))  # remove helper columns
+ 
+mw_mw46_rr_filled2 <- mw_mw46_rr_filled2 %>% filter(max_p_identity >= 97) #44
+```
+
+
+```{r}
+mw_final_df2_not_filled2 <- mw_final_df2_not_filled %>%
+  filter(!asv_code %in% mw_mw46_rr_filled2$asv_code)
+
+#write.csv(mw_final_df2_not_filled2, here::here("geneious_search/mw_fina3l_df2_not_filled.csv"))
+
+# private lib search
+
+#add in private library
+priv_search_rr <- read.csv(here::here("geneious_search/geneious_mw46mw_rr3_not_bold_private.csv"))
+
+# STEP 1: Preprocess and filter
+priv_search_rr_gt97 <- priv_search_rr %>%
+  dplyr::rename(
+    max_p_identity = X..Pairwise.Identity,
+    coverage = Query.coverage,
+    asv_code = Query
+  ) %>%
+  mutate(
+    Name = gsub("_", " ", Name),
+    species = sub("-[^-]+$", "", Name),
+    id = sub(".*-", "", Name),
+    max_p_identity = as.numeric(gsub("%", "", max_p_identity)),
+    coverage = as.numeric(gsub("%", "", coverage))
+  ) %>%
+  filter(max_p_identity >= 97, coverage > 70)
+
+priv_search_rr_gt97 <- priv_search_rr_gt97 %>%
+  left_join(
+    priv_lib %>% select(id, kingdom, phylum, class, order, family, genus),
+    by = "id"
+  )
+
+# 1. Join on asv_code
+df_joined <- mw_final_df2_not_filled2 %>%
+  left_join(
+    priv_search_rr_gt97 %>%
+      select(asv_code, kingdom, phylum, class, order, family, genus, species, max_p_identity),
+    by = "asv_code",
+    suffix = c("", "_new")
+  )
+
+# 2. Overwrite columns using coalesce: take new value if available, else keep old
+mw_mw46_rr_filled3 <- df_joined %>%
+  mutate(
+    kingdom        = coalesce(kingdom_new, kingdom),
+    phylum         = coalesce(phylum_new, phylum),
+    class          = coalesce(class_new, class),
+    order          = coalesce(order_new, order),
+    family         = coalesce(family_new, family),
+    genus          = coalesce(genus_new, genus),
+    species        = coalesce(species_new, species),
+    max_p_identity = coalesce(max_p_identity_new, max_p_identity)
+  ) %>%
+  select(-ends_with("_new"))  # remove helper columns
+```
+
+# combine with results from searches
+```{r}
+mw_final_df2_filled <- rbind(mw_mw46rr_filled1, mw_mw46_rr_filled2, mw_mw46_rr_filled3)
+```
+
+
+# combine with results from searches
+
+```{r}
+#Update 'species' column to only include names if max threshold is above 97
+mw_final_df2_filled <-  mw_final_df2_filled %>%
+  dplyr::mutate(species = if_else(max_p_identity < 97, "", species))
+
+# Update 'genus' column to only include names if max threshold is above 95
+mw_final_df2_filled <-  mw_final_df2_filled %>%
+  dplyr::mutate(genus = if_else(max_p_identity < 95, "", genus))
+
+# Update 'family' column to only include names if max threshold is above 90
+mw_final_df2_filled <-  mw_final_df2_filled %>%
+  dplyr::mutate(family = if_else(max_p_identity < 90, "", family))
+
+# Update 'order' column to only include names if max threshold is above 80
+mw_final_df2_filled <-  mw_final_df2_filled %>%
+  dplyr::mutate(order = if_else(max_p_identity < 85, "",order))
+```
+
+```{r}
+timestamp <- format(Sys.time(), "%d_%m_%Y")
+
+# Create the file name with the timestamp 
+file_name <- here::here(paste0("results/final_data_summaries/MW_data_vsearch_filled_summary_reruns_", timestamp, ".csv"))
+
+# Save the dataframe with the new file name
+write.csv( mw_final_df2_filled, file = file_name, row.names = FALSE)
+```
+
+## New asvs
+```{r}
+# # new asv's not in current asv library
+# # asvs not in asv_lib
+# asv_diff <- XXXXXX %>%
+#   filter(!asv_code %in% asv_lib$asv_code) # before filtering 2954 new asvs
+# 
+# # select asv_lib columns
+# new_asv_for_asv_lib <- asv_diff %>%
+#   select(asv_code, kingdom, phylum, class, order, family, genus, species,
+#          max_p_identity, asv_seq, amplicon) %>%
+#   filter(!kingdom == "Unassigned") %>% dplyr::rename("asv_sequence" = "asv_seq") %>%  select(asv_code, kingdom, phylum, class, order, family, genus, species, max_p_identity, amplicon, everything())
+# 
+# #1445 after removing unassigned
+# 
+# new_asv_for_asv_lib[is.na(new_asv_for_asv_lib)] <- ""
+# 
+# # tidy up naming
+# new_asv_for_asv_lib <- new_asv_for_asv_lib %>%
+#   mutate(
+#     species = sub(" CEB$", "", species),  # Remove trailing " CEB"
+#     species = case_when(
+#       species == "Lichenaula sp. ANIC2" ~ "Lichenaula sp. B-AAX4878",
+#       species == "Paropsisterna TFIC_sp_1" ~ "Paropsisterna sp. B-ADX1705",
+#       TRUE ~ species
+#     )
+#   )
+```
+
+
+```{r}
+#write.csv(new_asv_for_asv_lib, "~/uomShare/wergStaff/MelCarew/git-data/metabarcoding_workflow/asv_library/new_asv_for_asv_lib.csv")
+```
+
+```{r}
+mw_final_df1_filled_tax <- mw_final_df1_filled %>% select(asv_code, kingdom, phylum, class, order, family, genus, species, max_p_identity)
+
+ # mw_final_df1_filled_ck <-  mw_mw46 %>%
+ #   left_join( mw_final_df1_filled_tax, select(asv_code, kingdom, phylum, class, order, family, genus, species,    max_p_identity), by = "asv_code")
+ 
+ # Step 1: Rename original taxonomic columns in mw_mw46 to preserve them
+mw_mw46_renamed <- mw_mw46 %>%
+  rename_with(~ paste0(.x, "_orig"), 
+              c(kingdom, phylum, class, order, family, genus, species, max_p_identity))
+
+# Step 2: Join with the updated taxonomy from mw_final_df1_filled_tax
+mw_mw46_updated <- mw_mw46_renamed %>%
+  left_join(mw_final_df1_filled_tax %>%
+              select(asv_code, kingdom, phylum, class, order, family, genus, species, max_p_identity),
+            by = "asv_code")
+
+# Step 3: Overwrite taxonomic fields using coalesce (prefer new values, fallback to original)
+mw_mw46_final <- mw_mw46_updated %>%
+  mutate(
+    kingdom        = coalesce(kingdom, kingdom_orig),
+    phylum         = coalesce(phylum, phylum_orig),
+    class          = coalesce(class, class_orig),
+    order          = coalesce(order, order_orig),
+    family         = coalesce(family, family_orig),
+    genus          = coalesce(genus, genus_orig),
+    species        = coalesce(species, species_orig),
+    max_p_identity = coalesce(max_p_identity, max_p_identity_orig)
+  ) %>%
+  select(-ends_with("_orig"))  # Remove backup columns
+
+mw_mw46_final <- select(asv_code, kingdom, phylum, class, order, family, genus, species, Consensus, max_p_identity, threshold, everything()) %>%
+  relocate(asv_seq, amplicon, .after = last_col())
+
+```
+
+
+```{r}
+```
+

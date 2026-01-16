@@ -1,0 +1,291 @@
+---
+title: "final_data_summary"
+author: "Jessica Chung /Melissa Carew"
+date: "01/03/2024"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This final section enables data to be arranged into a final table for future analysis.
+
+# producing final data summary
+
+# load results files from previuos steps
+```{r}
+library(dplyr)
+zeale_lulu <- readRDS(here("bat_diet/results/lulu/zeale_lulu.rds"))
+#zeale_classifications <- read_qza(here("plants/results/classification/zeale_classification.qza"))
+zeale_seq <- read_qza(here("bat_diet/results/dada2/zeale_representative_sequences.qza"))
+#thresholds_list <- readRDS(here("plants/cache/thresholds_list.rds"))
+#samples_df <- readRDS(here::here("plants/cache/samples_df.rds"))
+```
+
+# check classification data for zeale amplicon
+```{r}
+#zeale_classifications$data %>% head(100)
+```
+
+```{r}
+# Pull out table of read counts with LULU filter applied
+zeale_lulu$curated_table
+```
+
+
+```{r}
+# merge zeale_classifications with thresholds
+#zeale_df <- merge(zeale_classifications$data, thresholds_list[["zeale"]], by.x="Feature.ID", by.y="feature-id")
+```
+
+```{r}
+zeale_seq$data %>% head
+```
+
+```{r}
+#zeale_df %>% arrange(desc(max_p_identity)) %>% head(100)
+```
+
+```{r}
+#table(zeale_df$Taxon == "Unassigned")
+```
+
+```{r}
+#zeale_df %>% filter(Taxon == "Unassigned") %>% pull(max_p_identity) %>% table
+```
+
+
+```{r}
+# for big dataset
+#zeale_search_results <- read_tsv(here("plants/results/classification/preliminary/zeale_vsearch.tsv"))
+```
+
+```{r}
+#zeale_search_results$data %>% dim
+```
+
+## Combine workflow outputs
+
+# fix sample names
+
+This can be changed with future feedback.  
+
+We could use https://docs.qiime2.org/2023.5/plugins/available/feature-table/filter-features-conditionally/
+if we want simple filtering, but if we want to do something complex, better to do it manually.
+
+
+```{r}
+zeale_table <- list(zeale=zeale_lulu$curated_table)
+```
+
+
+```{r}
+# Get sample names and groups
+# sample_groups <- samples_df$factor
+# names(sample_groups) <- samples_df$sample_name
+# sample_groups
+```
+
+# combining read tables for the zeale rbcl and trnl amplicons
+```{r}
+# make them dataframes
+zeale_read_tab <- zeale_table$zeale
+```
+
+```{r}
+# covert row headers to column and then name column 1
+zeale_read_tab <- rownames_to_column(zeale_read_tab, var = "asv_code")
+```
+
+#Combining read classification tables for the zeale and trnl amplicons
+```{r}
+# # rename column 1
+# colnames(zeale_readclass_df)[1] <- "asv_code"
+# 
+# # join into a singe dataframe
+# zeale_readclass_df <- left_join(zeale_df, zeale_read_tab, by = "asv_code")
+```
+
+# add in ASV sequence data
+```{r}
+# put sequences in a dataframe
+zeale_asvseq <- data.frame(zeale_seq$data)
+
+# convert row headers to column and then name column 1
+zeale_asvseq <- rownames_to_column(zeale_asvseq, var = "asv_code")
+
+# add amplicon information
+zeale_asvseq  <- mutate(zeale_asvseq, amplicon = "zeale")
+
+# align column names for merging
+zeale_asvseq <- zeale_asvseq %>% dplyr::rename(asv_seq = zeale_seq.data)
+
+```
+
+```{r}
+# merge ALL data into a single dataframe
+final_df <- left_join(zeale_read_tab, zeale_asvseq, by = "asv_code")
+
+# remove columns without data
+final_df <- na.omit(final_df)
+
+# final_df$Taxon <- gsub("k__", "", final_df$Taxon)
+# final_df$Taxon <- gsub("p__", "", final_df$Taxon)
+# final_df$Taxon <- gsub("c__", "", final_df$Taxon)
+# final_df$Taxon <- gsub("o__", "", final_df$Taxon)
+# final_df$Taxon <- gsub("f__", "", final_df$Taxon)
+# final_df$Taxon <- gsub("g__", "", final_df$Taxon)
+# final_df$Taxon <- gsub("s__", "", final_df$Taxon)
+# final_df$Taxon <- gsub("_", " ", final_df$Taxon)
+# 
+# # place taxonomic data in separate columns
+# final_df <- separate(final_df, Taxon, into = c("kingdom", "phylum", "class", "order", "family", "genus","species"), sep = ";",  fill = "right")
+# 
+# 
+print(final_df)
+```
+
+```{r}
+# save dataframe
+write.csv(final_df, file = here("plants/zeale_sample_data_summary.csv"), row.names = FALSE)
+```
+
+```{r}
+
+ # read in .csv files with bold barcodeID engine results.
+bold_results <- read.csv(here::here("bat_diet/Zeale_asv_bold_search.csv"))
+
+# rename all results to match other dataframes
+bold_results <- bold_results %>%
+   dplyr::rename(asv_code = Query.ID) %>%
+   dplyr::rename(perc_identity = ID.)  %>%
+   dplyr::rename(species = Species)  %>%
+   dplyr::rename(genus = Genus)  %>%
+   dplyr::rename(family = Family)  %>%
+   dplyr::rename(order = Order)  %>%
+   dplyr::rename(class = Class)  %>%
+   dplyr::rename(phylum = Phylum)
+  
+#  extract 'bin_url' and place in a new column
+bold_results <- bold_results %>%
+   mutate(bin_uri = str_extract(PID..BIN., "(?<=:)(.*?)(?=])"))
+
+bold_results <- bold_results %>%
+  group_by(bin_uri) %>%
+  filter(
+    # Keep the row if:
+    !is.na(species) & species != "" |
+    
+    # Or if all rows with this bin_uri have no species info
+    !any(!is.na(species) & species != "")
+  ) %>%
+  ungroup()
+
+
+
+## summarize the bold data keeping the highest value for ID (note this doesn't always give the lowest taxonomy, just the best matching record). Remove PID..BIN. column so duplicate asv_code can be removed.
+bold_results <- bold_results %>%
+   select(-"PID..BIN.")
+
+# summarise so there is one  asv_code per row
+bold_results_sum <- bold_results %>%
+   group_by(asv_code) %>%
+   slice_max(order_by = perc_identity, n = 1, with_ties = FALSE) %>%
+   ungroup() %>%
+   distinct(asv_code, .keep_all = TRUE)
+
+final_df <- bold_results_sum %>%
+   select(asv_code, phylum, class, order, family, genus, species, bin_uri, perc_identity) %>%
+   left_join(final_df, by = "asv_code")
+
+# save dataframe
+#write.csv(final_df, file = here("bat_diet/zeale_final_data_summary.csv"), row.names = FALSE)
+```
+
+```{r}
+#Add best possible ids
+ #read in existing bins
+bins <- read.csv(here::here("bat_diet/bins.csv"))
+#make a bins list from the bold_results
+
+bins2 <- bold_results %>%
+  mutate(
+    species = as.character(species),
+    bin_uri = as.character(bin_uri)
+  ) %>%
+  filter(!is.na(species) & species != "") %>%
+  group_by(bin_uri) %>%
+  slice_max(order_by = perc_identity, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  select(bin_uri, species)
+
+# pull out record withou a species name
+bold_species_na_unique <- bold_results %>%
+  filter((is.na(species) | species == ""),        # species missing
+         perc_identity >= 97) %>%                 # identity threshold
+  select(bin_uri, order, family, genus) %>%     # keep relevant columns
+  distinct(bin_uri, .keep_all = TRUE)  
+
+bins_named <- bold_species_na_unique %>%
+  mutate(
+    bin_uri = trimws(bin_uri),  # Remove any accidental leading/trailing spaces
+    species_name = case_when(
+      !is.na(genus) & genus != ""   ~ paste0(genus, " sp. B-", bin_uri),
+      !is.na(family) & family != "" ~ paste0(family, " sp. B-", bin_uri),
+      TRUE                          ~ paste0(order, " sp. B-", bin_uri)
+    )
+  )
+  
+# add species names using bins
+bins_all <- bind_rows(
+  bins,
+  bins2 %>%
+    filter(!is.na(bin_uri)) %>%
+    anti_join(bins, by = "bin_uri"),
+ bins_named %>%
+    filter(!is.na(bin_uri)) %>%
+    select(bin_uri, species = species_name) %>%
+    anti_join(bins, by = "bin_uri")
+)
+
+final_df <- final_df %>% 
+  dplyr::rename(species_old = species) %>%
+  left_join(bins_all %>% select(bin_uri, species), by = "bin_uri") %>%
+  relocate(species, .after = genus) %>%
+  select(-species_old)
+```
+
+
+```{r}
+# Update 'species' column to only include names if max threshold is above 97
+final_df <-  final_df %>%
+  dplyr::mutate(species = if_else(perc_identity < 97, "", species))
+
+# Update 'genus' column to only include names if max threshold is above 95
+final_df <-  final_df %>%
+  dplyr::mutate(genus = if_else(perc_identity < 95, "", genus))
+
+# Update 'family' column to only include names if max threshold is above 90
+final_df <-  final_df %>%
+  dplyr::mutate(family = if_else(perc_identity < 90, "", family))
+
+# Update 'order' column to only include names if max threshold is above 80
+final_df <-  final_df %>%
+  dplyr::mutate(order = if_else(perc_identity < 85, "",order))
+```
+
+
+```{r}
+# save dataframe
+write.csv(final_df, file = here("bat_diet/bat_diet_final_data_summary.csv"), row.names = FALSE)
+```
+
+```{r}
+metab_long <- final_df %>%
+  pivot_longer(cols = bat1:bat95, names_to = "sample", values_to = "reads") %>%
+  filter(reads != 0) #%>%  # Remove rows where value is zero
+  #select(-matches("^X(\\.\\d+)?$"))   %>% # Remove unwanted columns named X, X.1, etc.
+
+```
+

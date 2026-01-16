@@ -1,0 +1,85 @@
+---
+title: "Corrections_to_ASV_library"
+author: "MCarew"
+date: "2024-09-06"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+This document contains scripts to correct errors in the document 'asv_library_97_aug24.xlsx'. A modified version will be produced from this script
+
+# read in 'asv_library_97_aug24.xlsx' spreadsheets
+```{r}
+# read in flies
+file_path <- "~/uomShare/wergStaff/MelCarew/git-data/asv_library_97_aug24.xlsx"
+
+# Get the names of the sheets
+sheet_names <- readxl::excel_sheets(file_path)
+
+# Read the sheets into as dataframes
+truncated_fills_df <- readxl::read_excel(file_path, sheet = sheet_names[1])  # contains full taxonomic information for classifications with truncated taxonomy
+otu_groups_df <- readxl::read_excel(file_path, sheet = sheet_names[2], col_types = "text") # groups unclassified sequences into 'OTUs'
+max_p_update_df <- readxl::read_excel(file_path, sheet = sheet_names[3])#updates/corrects any missing identifications or errors in classification
+complexes_df <- readxl::read_excel(file_path, sheet = sheet_names[4])# identifies any ambiguous taxonomic assignments that should be considered as complexes
+```
+
+# corrections
+```{r}
+library(dplyr)
+
+# Find and replace in the 'species' column
+truncated_fills_df <- truncated_fills_df %>%
+  mutate(species = gsub("Aedes alboannulotus", "Aedes alboannulatus", species),
+         species = gsub("Hemianax papuensis", "Anax papuensis", species),
+         species = gsub("Limnodrilus claparedeanus", "Limnodrilus claparedianus", species),
+         species = gsub("Paracnephia orientalis", "Austrocnephia orientalis", species),
+         species = gsub("Ulmerochorema stigma", "Ulmerochorema stigmum", species),
+         species = gsub("Antiporus gilbertii", "Antiporus gilberti", species),
+         species = gsub("Asmicridea edwardsi", "Asmicridea edwardsii", species),
+         species = gsub("Austrolimnius waterhouseii", "Austrolimnius waterhousei", species),
+         species = gsub("Culicoides bundyensi", "Culicoides bundyensis", species),
+         species = gsub("Hyderodes shuckardi", "Hyderodes schuckardi", species),
+         species = gsub("SImsonia longipes", "Simsonia longipes", species))
+
+max_p_update_df <- max_p_update_df %>%
+  mutate(species = gsub("Aedes alboannulotus", "Aedes alboannulatus", species),
+         species = gsub("Hemianax papuensis", "Anax papuensis", species),
+         species = gsub("Limnodrilus claparedeanus", "Limnodrilus claparedianus", species),
+         species = gsub("Paracnephia orientalis", "Austrocnephia orientalis", species),
+         species = gsub("Ulmerochorema stigma", "Ulmerochorema stigmum", species),
+         species = gsub("Antiporus gilbertii", "Antiporus gilberti", species),
+         species = gsub("Asmicridea edwardsi", "Asmicridea edwardsii", species),
+         species = gsub("Austrolimnius waterhouseii", "Austrolimnius waterhousei", species),
+         species = gsub("Culicoides bundyensi", "Culicoides bundyensis", species),
+         species = gsub("Hyderodes shuckardi", "Hyderodes schuckardi", species),
+         species = gsub("SImsonia longipes", "Simsonia longipes", species))
+
+```
+
+```{r}
+library(writexl)
+library(openxlsx)
+
+# Create a new workbook
+wb <- createWorkbook()
+
+# Add worksheets
+addWorksheet(wb, "truncated_fills")
+addWorksheet(wb, "otu_groups")
+addWorksheet(wb, "max_p_update")
+addWorksheet(wb, "complexes")
+
+# Write data into each sheet
+writeData(wb, sheet = "truncated_fills", truncated_fills_df)
+writeData(wb, sheet = "otu_groups", otu_groups_df)
+writeData(wb, sheet = "max_p_update", max_p_update_df)
+writeData(wb, sheet = "complexes", complexes_df)
+
+# Save the workbook
+saveWorkbook(wb, "~/uomShare/wergStaff/MelCarew/git-data/asv_library_97_aug24_modified.xlsx", overwrite = TRUE)
+```
+

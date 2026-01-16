@@ -1,0 +1,66 @@
+---
+title: "Cross-check of MC excel checks with reproducible Appendix 2 code"
+format: html
+editor: source
+editor_options: 
+  chunk_output_type: console
+---
+
+MEL: I've removed a lot of past workings here, as the checks are looking pretty complete.  Having said that, there are a few new discrepancies resulting from 
+
+```{r}
+# all_MC_checks compiled in compilation_of_osf_files ## 4
+all_MC_checks <- read.csv("~/uomShare/wergStaff/MelCarew/git-data/metabarcoding_workflow/asv_source_files/all_mc_checks.csv")
+# your validated private library compiled in compilation_of_osf_files ## 3
+priv_lib <- read.csv("~/uomShare/wergStaff/MelCarew/git-data/metabarcoding_workflow/asv_source_files/priv_lib_validated.csv")
+tfill <- as.data.frame(readxl::read_excel("~/uomShare/wergStaff/MelCarew/git-data/metabarcoding_workflow/asv_library/asv_library_corrected.xlsx",
+                       sheet = "tfill"))
+tfill <- tfill[tfill$aqu == 1,]
+tfill_spp_bins <- as.data.frame(readxl::read_excel("~/uomShare/wergStaff/MelCarew/git-data/metabarcoding_workflow/asv_library/asv_library_corrected.xlsx",
+                       sheet = "bin_uris"))
+tfill_spp_bins <- tfill_spp_bins[tfill_spp_bins$asv_code %in% tfill$asv_code,]
+load("~/uomShare/wergStaff/MelCarew/git-data/metabarcoding_workflow/asv_source_files/match_list_bin_uri_v5.rda")
+bold_results <- read.csv("~/uomShare/wergStaff/MelCarew/git-data/metabarcoding_workflow/asv_source_files/match_bold_v5.csv")
+priv_lib_spp <- as.data.frame(readxl::read_excel("~/uomShare/wergStaff/MelCarew/git-data/metabarcoding_workflow/asv_source_files/private_library_mc_validated.xlsx", sheet = "species"))
+priv_lib_lt97 <- as.data.frame(readxl::read_excel("~/uomShare/wergStaff/MelCarew/git-data/metabarcoding_workflow/asv_source_files/private_library_mc_validated.xlsx", sheet = "higher_taxa"))
+
+# tfill records without a BOLD match or without a match to your private library
+asv_no_bold <- tfill$asv_code[!tfill$asv_code %in% unique(names(match_list_bin_uri))]  # length(asv_no_bold)  1170 asv_codes
+
+# Records checked by Mel that do not have a >97% match with BOLD (and have been given different names by MC and CW)
+check_no_bold <- all_MC_checks[all_MC_checks$asv_code %in% asv_no_bold,] #1170
+check_no_bold$species <- tfill$species[match(check_no_bold$asv_code, tfill$asv_code)]
+check_no_bold[is.na(check_no_bold)] <- ""  # for easier matching
+check_no_bold <- dplyr::mutate(check_no_bold, 
+                               max_p_identity =  tfill$max_p_identity[match(check_no_bold$asv_code, tfill$asv_code)],
+                               max_sim_bold = tfill$max_sim_bold[match(check_no_bold$asv_code, tfill$asv_code)],
+                               .after = bold_match)
+check_no_bold <- dplyr::mutate(check_no_bold, species_old = tfill$species_old[match(check_no_bold$asv_code,tfill$asv_code)], .before = bold_match)
+# Reduce to only those records where species and checked_species_name are not equivalent
+check_no_bold <- check_no_bold[check_no_bold$species != check_no_bold$checked_species_name,] # 54 records
+# Identify the check_no_bold records that share a name with records that actually have a >=97% bold match
+tfill_bold <-tfill[tfill$asv_code %in% unique(bold_results$asv_code[bold_results$similarity >= 97]),]  #17,273
+check_no_bold_spp_in_bold <- check_no_bold[check_no_bold$species %in% unique(tfill_bold$species),]   # 0 
+check_no_bold <- check_no_bold[!check_no_bold$asv_code %in% check_no_bold_spp_in_bold$asv_code,] # still 54
+
+
+# 2 are records where you had bold_match = 92, and checked_species_name = Notonemouridae
+notonem_right <- check_no_bold[check_no_bold$bold_match == "92",]
+notonem_right
+# The geneious search confirmed matches of 86.1 and 87.0 - these probably should have replaced 
+# tfill the max_p_identity of 90, 
+# but no such cases were in the script's logic. As max_p_identity of 86 or 90 makes
+# no substantive difference, I am moving on, and assuming these two records are correct 
+# but let me know if you want to change these (I can't 
+# guarantee there arent other similar inconsequential max_p_identity errors in t_fill!)
+
+check_no_bold <- check_no_bold[!check_no_bold$asv_code %in% notonem_right$asv_code,] # Down to 52
+
+# These are all genbank or private library records, all of which had final check of matches with genbank and geneious.
+# Accept those with 
+check_no_bold 
+# write.csv(check_no_bold, "~/uomShare/wergStaff/MelCarew/git-data/metabarcoding_workflow/asv_source_files/unmatched_priv_lib.csv", row.names = FALSE)
+
+# tfill records these last 52 at the genus or family level as appropriate to their max_p_identity.
+
+```

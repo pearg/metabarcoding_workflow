@@ -1,0 +1,172 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Scripts for manipulating data from final long format
+
+
+#convert long form back to full data summary with data filled and filtered
+Note: This code will need to be configured for each dataset, so that the rows containing the read counts are specified (e.g. pivot_longer(cols = X10BNY29042rep1:Cont3rep1), the 'X10BNY29042rep1:Cont3rep1' will need to be changed to the first and last column name
+Miseq13:X10BNY29042rep1:Cont3rep1 
+Miseq15:X10FEH41841rep3:S21YAR36377rep3
+Miseq16:Contrep1:S21WAY30960rep3
+Miseq17:A22BNY29042rep1:S21YZJ1175rep6
+Miseq18:A22ALD26081rep1:S22YZ8202rep3
+Miseq19:A22BF3373rep1:S22YPB224rep3
+Miseq20:A23BNY29042rep1:S22SPL263rep6
+```{r}
+# Step 1: Replace empty cells with 0 before pivoting
+final_data_filled_clean <- filtered_dataframe %>%
+  mutate(across(, ~ replace_na(.x, 0)))  # Replace NA with 0 in specified columns
+
+# Step 2: Pivot longer
+metab_long <- final_data_filled_clean %>%
+  pivot_longer(
+    cols = Contrep1:S21WAY30960rep3,  # Specify the range or individual column names
+    names_to = "sample",
+    values_to = "value"
+  ) %>%
+  # Ensure that the 'value' column is numeric and any empty strings are replaced with 0
+  mutate(value = as.numeric(value)) %>%
+  filter(value != 0) %>%  # Optionally filter out rows where value is zero
+  select(-matches("^X(\\.\\d+)?$"))  # Remove columns named X, X.1, ..., X.11
+
+# Step 3: Pivot wider to transform back to wide format
+metab_wide <- metab_long %>%
+  pivot_wider(
+    names_from = sample,
+    values_from = value,
+    values_fill = list(value = 0)  # Ensure missing values in the new wide format are filled with 0
+  )
+
+# List of columns to modify
+cols_to_modify <- c('kingdom', 'phylum', 'class', 'order', 'family', 'genus', 'species')
+
+# Convert specified columns to character type
+metab_wide[cols_to_modify] <- lapply(metab_wide[cols_to_modify], as.character)
+
+# Replace NA values with empty strings in specified columns
+metab_wide[cols_to_modify][is.na(metab_wide[cols_to_modify])] <- ""
+
+# Remove 'X' at the start of column headings
+colnames(metab_wide) <- sub("^X", "", colnames(metab_wide))
+
+new_order <- c(setdiff(names(metab_wide), c("asv_seq", "amplicon")), "asv_seq", "amplicon")
+
+# Reorder the columns
+metab_wide <- metab_wide[, new_order]
+
+
+# Print the first few rows of the resulting dataframe
+print(head(metab_wide))
+```
+
+# save the filtered filled full dataframe with the PCR replcate seperate
+```{r}
+# Generate a timestamp
+timestamp <- format(Sys.time(), "%d_%m_%Y")
+
+# Create the file name with the timestamp (set Miseq run number)
+file_name <- paste0(uomshare, "/final_data_summaries/", miseq_folder, "_vsearch_data_summary_filled_filt_PCR_", timestamp, ".csv")
+# Save the dataframe with the new file name
+write.csv(metab_wide, file = file_name, row.names = FALSE)
+```
+
+## There are a number of options for exporting data for further analysis
+
+# OPTION 1: Summarize values by site (with PCR replicates combined)
+```{r}
+# Summarize the data
+summarized_df <- filtered_dataframe %>%
+  group_by(site, kingdom, phylum, class, order, family, genus, species, max_p_identity) %>%  # Group by specified columns including max_p_identity
+  summarise(reads = sum(reads, na.rm = TRUE), .groups = 'drop') %>%  # Sum the reads for each group
+  group_by(site, kingdom, phylum, class, order, family, genus, species) %>%  # Group by the main columns again
+  summarise(
+    reads = sum(reads, na.rm = TRUE),  # Sum the reads for each group
+    max_p_identity = ifelse(all(is.na(max_p_identity)), NA, max(max_p_identity, na.rm = TRUE)),  # Handle all NA case
+    .groups = 'drop'
+  )
+
+# Collapse rows by kingdom, phylum, class, order, family, genus, species
+collapsed_df <- summarized_df %>%
+  group_by(site, kingdom, phylum, class, order, family, genus, species) %>%
+  summarise(
+    reads = sum(reads, na.rm = TRUE),  # Sum the reads for each group
+    max_p_identity = ifelse(all(is.na(max_p_identity)), NA, max(max_p_identity, na.rm = TRUE)),  # Get max value of max_p_identity
+    .groups = 'drop'
+  )
+
+# Pivot wider to transform the site names into columns
+wide_summarised_df <- collapsed_df %>%
+ pivot_wider(names_from = site, values_from = reads, values_fill = 0)  # Fill missing values with 0
+
+# List of columns to modify
+cols_to_modify <- c('kingdom', 'phylum', 'class', 'order', 'family', 'genus', 'species')
+
+# Convert specified columns to character type
+wide_summarised_df[cols_to_modify] <- lapply(wide_summarised_df[cols_to_modify], as.character)
+
+# Replace NA values with empty strings in specified columns
+wide_summarised_df[cols_to_modify][is.na(wide_summarised_df[cols_to_modify])] <- ""
+
+#subset out controls
+controls <- wide_summarised_df %>% 
+  select(kingdom, phylum, class, order, family, genus, species, max_p_identity, DrosX, MAR2T, Cont)
+controls <- controls %>%
+ filter(MAR2T != 0 | DrosX != 0, Cont != 0)
+filec <- paste0(uomshare, "/final_data_summaries/", miseq_folder, "_controls_", timestamp, ".csv")
+ write.csv(controls, file = filec, row.names = FALSE)
+
+wide_summarised_df <- wide_summarised_df %>% 
+  select(-DrosX, -MAR2T, -Cont)
+
+# Print the resulting wide summarized data frame
+print(wide_summarised_df)
+
+```
+
+#Now aggregate species data so that the same species identification do not occur multiple times
+```{r}
+library(dplyr)
+
+# List of columns to modify
+cols_to_modify <- c('kingdom', 'phylum', 'class', 'order', 'family', 'genus', 'species')
+
+# Convert specified columns to character type
+wide_summarised_df[cols_to_modify] <- lapply(wide_summarised_df[cols_to_modify], as.character)
+
+# Replace NA values with empty strings in specified columns
+wide_summarised_df[cols_to_modify][is.na(wide_summarised_df[cols_to_modify])] <- ""
+
+# Print the resulting wide summarized data frame
+print(wide_summarised_df)
+
+# List of columns to group by
+group_cols <- c('kingdom', 'phylum', 'class', 'order', 'family', 'genus', 'species')
+
+# Identify the columns that are site_per (excluding group columns and max_p_identity)
+site_cols <- setdiff(colnames(wide_summarised_df), c(group_cols, 'max_p_identity'))
+
+# Collapse rows by kingdom, phylum, class, order, family, genus, species
+collapsed_wide_summarised_df <- wide_summarised_df %>%
+  group_by(across(all_of(group_cols))) %>%
+  summarise(
+    max_p_identity = max(max_p_identity, na.rm = TRUE),  # Get max value of max_p_identity
+    across(all_of(site_cols), function(x) sum(x, na.rm = TRUE)),  # Sum the values for the site_per columns
+    .groups = 'drop'
+  )
+
+# Print the collapsed data frame
+print(collapsed_wide_summarised_df)
+```
+
+# save file
+```{r}
+# save filled dataframe
+timestamp <- format(Sys.time(), "%d_%m_%Y")
+
+# Create the file name with the timestamp (NOTE:Change the MiSeq number to the dataset you are working with)
+file_name1 <- paste0(uomshare, "/final_data_summaries/", miseq_folder, "_final_data_summary_", timestamp, ".csv")
+ write.csv(wide_summarised_df, file = file_name1, row.names = FALSE)
+```

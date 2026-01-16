@@ -1,0 +1,375 @@
+---
+title: "Adding_additonal_taxonomic_information and replicate filtering"
+author: "Melissa Carew"
+date: "06/06/2024"
+output: html_document
+---
+
+# Filling and Filtering notebook for all Miseq runs except MiSeq13 (this has a different experimental design)
+
+This notebook is designed to filling missing taxonomic assignments from the vsearch step (in 03_classification) in the metabarcoding workflow and make corrections to taxonomic assignments that are incorrectly assigned by vsearch due to errors in the DNA barcode reference libraries (SECTION 1).It also performs a final flitering to detect and remove species detections that have most likely arisen from 'mistagging' (SECTION 2)
+
+```{r}
+# Load the required libraries
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(readxl)
+```
+
+## SECTION 1: Filling in missing/incorrect taxonomic classifications
+
+An 'asv library' based on analysis of Miseq datasets was constructed ('Appendix_2_clean_cw.qmd'). This file captures ASVs (amplicon sequence variants) from the DADA2 step (where the metabarcoding data is reduced into a series of sequence groups with high sequence similarity i.e. ASVs) and corrects errors in taxonomic assignment and adds new species from bold version 5 which were missing from the vsearch reference database used to make taxonomic assignments in n 03_classification: the library will:
+-   update/correct any missing identifications or errors in classification 
+-   identify any ambiguous taxonomic assignments that should be considered as complexes 
+
+```{r setup, warning=FALSE}
+# Reset directory
+miseq_folder <- "miseq22"
+
+# Set the directory path for files to be stored on uomshare
+uomshare <- paste0("~/uomShare/wergStaff/MelCarew/git-data/metabarcoding_workflow/", miseq_folder, "/metabarcoding_workflow")
+
+# Read the final data summary CSV
+#final_df <- read.csv(paste0(uomshare, "/final_data_summaries/", miseq_folder, "_vsearch_data_summary_26_11_2024.csv"))
+
+# Read the final data summary CSV
+#final_df <- read.csv(paste0(uomshare, "/final_data_summaries/", miseq_folder, "_vsearch_data_summary_26_02_2025.csv")) #miseq18
+final_df <- read.csv(paste0(uomshare, "/final_data_summaries/", miseq_folder, "_vsearch_data_summary_15_06_2025.csv")) #miseq22
+```
+
+```{r}
+# read in updated asv library
+asv_lib <- read.csv("~/uomShare/wergStaff/MelCarew/git-data/metabarcoding_workflow/asv_source_files_MC/asv_library_corrected_Jul_25.csv")
+```
+
+```{r}
+# select only taxonomy and match fields from asv_lib
+asv_lib_subset <- asv_lib %>%
+  select(asv_code, 
+         kingdom_new = kingdom, phylum_new = phylum, class_new = class, 
+         order_new = order, family_new = family, genus_new = genus, 
+         species_new = species, max_p_identity_new = max_p_identity)
+
+# join to final_df and update taxonomy fields ONLY
+final_df_updated <- final_df %>%
+  left_join(asv_lib_subset, by = "asv_code") %>%
+  mutate(
+    kingdom        = coalesce(kingdom_new, kingdom),
+    phylum         = coalesce(phylum_new, phylum),
+    class          = coalesce(class_new, class),
+    order          = coalesce(order_new, order),
+    family         = coalesce(family_new, family),
+    genus          = coalesce(genus_new, genus),
+    species        = coalesce(species_new, species),
+    max_p_identity = coalesce(max_p_identity_new, max_p_identity)
+  ) %>%
+  select(-ends_with("_new"))  # remove temporary columns
+
+# reorder columns if needed
+final_df_filled <- final_df_updated %>%
+  select(asv_code, kingdom, phylum, class, order, family, genus, species, max_p_identity, everything(), asv_seq, amplicon)
+```
+
+```{r}
+# Update 'species' column to only include names if max threshold is above 97
+final_df_filled <-  final_df_filled %>%
+  dplyr::mutate(species = if_else(max_p_identity < 97, "", species))
+
+# Update 'genus' column to only include names if max threshold is above 95
+final_df_filled <-  final_df_filled %>%
+  dplyr::mutate(genus = if_else(max_p_identity < 95, "", genus))
+
+# Update 'family' column to only include names if max threshold is above 90
+final_df_filled <-  final_df_filled %>%
+  dplyr::mutate(family = if_else(max_p_identity < 90, "", family))
+
+# Update 'order' column to only include names if max threshold is above 80
+final_df_filled <-  final_df_filled %>%
+  dplyr::mutate(order = if_else(max_p_identity < 85, "",order))
+```
+
+# adjust Cont names for flitering so that controls have the same names
+```{r message=FALSE, warning=FALSE}
+# List of old and new column names
+old_names <- c("Cont1", "cont1", "COICont1" ,"Cont2", "cont2", "COICont2", "Cont3", "COICont3", "Cont4", "Cont5", "Cont6", "Cont7", "Cont8")
+new_names <- c("Contrep1", "Contrep1", "Contrep1", "Contrep2", "Contrep2","Contrep2", "Contrep3", "Contrep3" ,"Contrep4", "Contrep5", "Contrep6", "Contrep7", "Contrep8")
+
+# note some controls will not exist in some datasets
+
+# Renaming only the columns that exist in the dataframe
+final_df_filled <- final_df_filled %>%
+  rename_at(vars(one_of(old_names)), ~ new_names[match(., old_names)])
+
+# Print the modified dataframe
+print(final_df_filled)
+```
+
+```{r}
+# Save filled dataframe
+timestamp <- format(Sys.time(), "%d_%m_%Y")
+
+# Create the file name with the timestamp (NOTE: Change the MiSeq number to the dataset you are working with)
+file_name <- paste0(uomshare, "/final_data_summaries/", miseq_folder, "_vsearch_data_summary_filled_", timestamp, ".csv")
+
+# Save the dataframe with the new file name
+write.csv(final_df_filled, file = file_name, row.names = FALSE)
+```
+______________________________
+
+## SECTION 2: PCR filtering
+This section is designed to format data and filter it for 'mistagging'. Mistagging or 'tag switching' can occur causing ASVs to be assigned to the wrong sample. This occurs at a low frequency and is usually random. PCR replicates included in the study design help detect and remove these errors. We use three PCR replicates and filter out any species/ASV detections that occur in only one PCR replicate (which are most likely from mistagging). We also add a second flitering step for the five most common ASV (those with the highest number of reads/sequences). These are more likely to be involved in mistagging and can appear in multiple PCR replicate we add a reads threshold for removing these detections.
+
+# Change data to long formmat (list) for PCR replicate filtering 
+Note: This code will need to be configured for each dataset, so that the rows containing the read counts are specified (e.g. pivot_longer(cols = X10BNY29042rep1:Cont3rep1), the 'X10BNY29042rep1:Cont3rep1' will need to be changed to the first and last column name with the reads data for each dataset
+Miseq13:X10BNY29042rep1:Cont3rep1 
+Miseq15:X10FEH41841rep3:S21YAR36377rep3
+Miseq16:Contrep1:S21WAY30960rep3
+Miseq17:A22BNY29042rep1:S21YZJ1175rep6
+Miseq18:A22ALD26081rep1:S22YZ8202rep3
+Miseq19:A22BF3373rep1:S22YPB224rep3
+Miseq20:A23BNY29042rep1:S22SPL263rep6
+Miseq22:COIA25ART10400Mrep1:S24Tro10c5rep3
+```{r}
+# Modify column names to prefix 'X' if they start with a number
+final_df_filled <- final_df_filled %>%
+  dplyr::rename_with(~ str_replace_all(., "^([0-9])", "X\\1"))
+
+# Pivot longer to transform columns 13 to 40 into rows 
+lf <- final_df_filled %>%
+  tidyr::pivot_longer(cols = COIA25ART10400Mrep1:S24Tro10c5rep3, names_to = "sample", values_to = "value") %>%
+  filter(value != 0) %>%  # Filter out rows where value is zero
+  select(-matches("^X(\\.\\d+)?$"))  # Remove columns named X, X.1, ..., X.11
+
+# Reorder columns with variable as the first column
+lf <- lf %>%
+  select(sample, everything())  # Move variable column to the first position
+
+# Create a new column "replace" by pasting the final character if string ends in 'rep1', 'rep2', or 'rep3'
+lf <- lf %>%
+  mutate(replicate = ifelse(grepl("rep[12345678]$", sample), paste0(substr(sample, nchar(sample), nchar(sample)), ""), ""))
+
+# Move the "replace" column to be the second column
+lf <- lf %>%
+  select(sample, replicate, everything())  # Move "replace" to the second column
+
+#lf <- lf %>%
+#  mutate(sample = str_replace(sample, "^X", ""))
+
+# add 'factor' column
+lf$site_per <- substr(lf$sample, 1, nchar(lf$sample))
+
+# remove replicate data
+lf <- lf %>%
+   dplyr::mutate(site_per = sub("(rep1|rep2|rep3|rep4|rep5|rep6|rep7|rep8)$", "", site_per))
+
+# Move the "replace" column to be the second column
+lf <- lf %>%
+  select(sample, replicate, site_per, everything())  # Move "replace" to the second column
+
+# add 'factor' column
+lf$site <- substr(lf$site_per, 1, nchar(lf$site_per))
+
+# remove replicate data (for Miseq13 only)
+#lf <- lf %>% dplyr::mutate(site = sub("(X10|X20|X30|X40|)", "", site))
+
+#Move the "replace" column to be the second column (for Miseq13 only)
+#lf <- lf %>%
+#select(sample, replicate, site_per, site, everything())  # Move "replace" to the second column
+
+# Move the "replace" column to be the second column
+lf <- lf %>%
+  select(sample, replicate, site, everything())  # Move "replace" to the second column
+
+# Rename the 'values' column to 'reads' using dplyr's rename()
+lf <- lf %>% dplyr::rename(`reads` = value)
+
+# remove site percentage column
+lf <- lf %>%
+  select(-site_per)
+```
+
+# remove low frequency detections < 5 reads
+```{r}
+lf_hf <- lf %>%
+  filter(reads >= 5)
+
+lf_lf <- lf %>%
+  filter(reads < 5)  # Corrected this line
+
+# Verify the number of records before and after filtering
+original_count <- nrow(lf)
+hf_count <- nrow(lf_hf)
+lf_count <- nrow(lf_lf)
+
+cat("Original number of records:", original_count, "\n")
+cat("Number of records with reads >= 5:", hf_count, "\n")
+cat("Number of records with reads < 5:", lf_count, "\n")
+```
+
+# Filtering single PCR replicate detections
+
+# filtering by 'species' subset out data with species ids
+```{r}
+# Subset where 'species' has non-empty character values
+lf_species <- lf_hf %>% filter(!is.na(species) & species != "")
+
+# Subset where 'species' has empty cells or NA (for ASV filtering)
+lf_no_species <- lf_hf %>% filter(is.na(species) | species == "")
+```
+
+# filter based on common species as these are more likely to be invovled in misstagging in the dataset
+```{r}
+# Step 1: Group by species and summarize the total reads
+species_reads <- lf_species %>%
+  group_by(species) %>%
+  summarise(total_reads = sum(reads, na.rm = TRUE)) %>%
+  arrange(desc(total_reads))
+
+# Print species_reads to verify the summarized data
+print(species_reads)
+
+# Step 2: Extract the top 10 species detections based on 'total_reads' values
+top_species <- species_reads %>%
+  top_n(10, wt = total_reads) %>%
+  pull(species)
+
+# Print top_species to verify the top species
+print(top_species)
+
+# Step 3: Filter out reads below 50 for the top 10 species in filtered_dataframe
+filtered_df_top_sp <- lf_species %>%
+  filter(!(species %in% top_species & reads < 50))
+
+filtered_df_top_sp_rem <- lf_species %>%
+  filter((species %in% top_species & reads < 50))
+
+# Verify the number of records before and after filtering
+original_count <- nrow(lf_species)
+filtered_count <- nrow(filtered_df_top_sp)
+
+cat("Original number of records:", original_count, "\n")
+cat("Number of records after filtering:", filtered_count, "\n")
+cat("Number of records removed:", original_count - filtered_count, "\n")
+```
+
+# remove single species occurences (species detection that occur in only one PCR replicate)
+```{r}
+# Remove the count column as it is no longer needed
+# Step 1: Create the counts data frame
+counts_sp <- filtered_df_top_sp %>%
+  group_by(site, species) %>%
+  summarise(rep_count = n_distinct(replicate), .groups = 'drop')  # Count distinct replicates
+
+# Step 2: Filter out rows where the combination of 'site' and 'species' appears only once
+sp_fil_lf_species <- filtered_df_top_sp %>%
+  left_join(counts_sp, by = c("site", "species")) %>%
+filter(rep_count > 1) %>%
+  select(-rep_count)  # Remove the rep_count column as it is no longer needed
+
+sp_fil_lf_rem <- filtered_df_top_sp %>%
+  filter(species %in% counts_sp$species[counts_sp$rep_count == 1] &
+           site %in% counts_sp$site[counts_sp$rep_count == 1])
+
+# Verify the number of records before and after filtering
+original_count <- nrow(filtered_df_top_sp)
+filtered_count <- nrow(sp_fil_lf_species)
+
+cat("Original number of records:", original_count, "\n")
+cat("Number of records after filtering:", filtered_count, "\n")
+cat("Number of records removed:", original_count - filtered_count, "\n")
+
+# Print the modified dataframe
+print(sp_fil_lf_species)
+
+```
+
+# remove single ASV occurences
+Remove ASV's with only a single occurrence in a sample (in only one PCR replicate) this targets ASV's without identifications or OTU groupings
+```{r}
+# Step 1: Create the counts_asv data frame
+counts_asv <- lf_no_species %>%
+  group_by(asv_code, site) %>%
+  summarise(rep_count = n_distinct(replicate), .groups = 'drop')  # Count distinct replicates
+
+# Inspect the counts_asv data frame
+print(counts_asv)
+
+# Step 2: Join and filter based on counts
+asv_fil_lf <- lf_no_species %>%
+  left_join(counts_asv, by = c("asv_code", "site")) %>%
+filter(rep_count > 1) %>%
+  select(-rep_count)  # Remove the rep_count column as it is no longer needed
+# Step 3: Verify the number of records before and after filtering
+original_count <- nrow(lf_no_species)
+filtered_count <- nrow(asv_fil_lf)
+
+cat("Original number of records:", original_count, "\n")
+cat("Number of records after filtering:", filtered_count, "\n")
+cat("Number of records removed:", original_count - filtered_count, "\n")
+```
+# bind filtered and filled dataframes
+```{r}
+#rejoin_dataframes
+filtered_final_df <- rbind(sp_fil_lf_species, asv_fil_lf)
+
+# Define the values to be removed
+values_to_remove <- c('DrosX', 'Dros', 'MAR2T','MART2', 'Cont')
+
+# Create the new data frame with the rows to be removed
+controls_long <- filtered_final_df[filtered_final_df$site %in% values_to_remove, ]
+
+# Update the original data frame to keep only the remaining rows
+filtered_final_df_samples <- filtered_final_df[!filtered_final_df$site %in% values_to_remove, ]
+```
+
+# check if 'CONTROL SPIKE' is in samples. There should be NO control spike in samples
+```{r}
+if ("CONTROL SPIKE" %in% filtered_final_df_samples$species) {
+  print("CONTROL SPIKE found")
+} else {
+  print("No CONTROL SPIKE found")
+}
+```
+
+# save data for modeling in long format (includes PCR replicates)
+```{r}
+#Create directory for modeling data
+dir.create(paste0(uomshare,"/final_modeling_data/"))
+
+# Generate a timestamp
+timestamp <- format(Sys.time(), "%d_%m_%Y")
+
+# Create the file name with the timestamp (set Miseq run number)
+file_name <- paste0(uomshare, "/final_modeling_data/", miseq_folder, "_final_data_long_format_", timestamp, ".csv")
+# Save the dataframe with the new file name
+write.csv(filtered_final_df_samples, file = file_name, row.names = FALSE)
+```
+
+# save control for checking in notebook 07
+```{r}
+# Generate a timestamp
+timestamp <- format(Sys.time(), "%d_%m_%Y")
+
+# Create the file name with the timestamp (set Miseq run number)
+cont <- paste0(uomshare, "/final_data_summaries/", miseq_folder, "_CONTROLS_long_format_", timestamp, ".csv")
+# Save the dataframe with the new file name
+write.csv(controls_long, file = cont, row.names = FALSE)
+```
+
+```{r}
+# # for miseq22 only
+sites_to_keep <- c("S21ANS16116", "A23YAR3637", "A22BT2373")
+
+filtered_final_df_samples_filtered <- filtered_final_df_samples %>%
+  filter(site %in% sites_to_keep)
+
+# Create the file name with the timestamp (set Miseq run number)
+file_name <- paste0(uomshare, "/final_modeling_data/", miseq_folder, "_final_data_long_format_", timestamp, ".csv")
+# Save the dataframe with the new file name
+write.csv(filtered_final_df_samples_filtered, file = file_name, row.names = FALSE)
+
+```
+
+
+

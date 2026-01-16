@@ -1,0 +1,565 @@
+---
+title: "47_site_study_data_filtering"
+author: "Melissa Carew"
+date: "21/08/2024"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Filling and Filtering notebook for the 47 site study MiSeq13 (this has a different experimental design to other runs) 
+
+This notebook is designed to filling missing taxonomic assignments from the vsearch step (in 03_classification) in the metabarcoding workflow and make corrections to taxonomic assignments that are incorrectly assigned by vsearch due to errors in the DNA barcode reference libraries (SECTION 1).It also performs a final flitering to detect and remove species detections that have most likely arisen from 'mistagging' (SECTION 2). It has been modified to produce a final dataset for the 10 site study.
+
+
+```{r}
+# Load the required libraries
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(readxl)
+library(here)
+```
+
+# reading in data
+The MiSeq13 runs contains the bulk of the data for the 10 site study. However, a few samples require re-running therefore the data need to be retrieved and combined into a final dataset prior to filtering.
+
+Samples requiring re-running
+40BNY29042 <- re-run in MiSeq15 (3 replicates 40BNY29042rep3, 40BNY29042rep4 and 40BNY29042rep5 (only need 2 reps))
+
+10FEH41841 <- re-run in MiSeq15 (3 replicates labelled 10FEH41841rep3, 10FEH41841rep4 and 10FEH41841rep5 (only need 2 reps))
+
+30DNG75620 <- re-run in MiSeq16 (3 replicates labelled Elut30DNG79574rep1, Elut1030DNG79574rep2 and Elut30DNG75620rep3 (only need 2 reps))
+
+```{r}
+#reset directory 
+final_df <- read.csv("~/git/metabarcoding_workflow_MW/results/final_data_summaries/MW_vsearch_data_summary_12_11_2024.csv")
+```
+
+## SECTION 1: Filling in missing/incorrect taxonomic classifications
+
+A file based on analysis of Miseq datasets was constructed ('asv_library_97_aug24.xlsx'). This file captures ASVs (amplicon sequence variants) from the DADA2 step (where the metabarcoding data is reduced into a series of sequence groups with high sequence similarity i.e. ASVs) and this file:
+-   fills truncated taxonomy assignments from the vsearch step (sheet 1)
+-   groups unclassified sequences into 'OTUs' (sheet 2)
+-   updates/corrects any missing identifications or errors in classification (sheet 3)
+-   identifies any ambiguous taxonomic assignments that should be considered as complexes (sheet 4)
+
+```{r}
+# read in flies
+file_path <- "~/Documents/asv_library_97_aug24_modified.xlsx"
+
+# Get the names of the sheets
+sheet_names <- readxl::excel_sheets(file_path)
+
+# Read the sheets into as dataframes
+truncated_fills_df <- readxl::read_excel(file_path, sheet = sheet_names[1])  # contains full taxonomic information for classifications with truncated taxonomy
+otu_groups_df <- readxl::read_excel(file_path, sheet = sheet_names[2], col_types = "text") # groups unclassified sequences into 'OTUs'
+max_p_update_df <- readxl::read_excel(file_path, sheet = sheet_names[3])#updates/corrects any missing identifications or errors in classification
+complexes_df <- readxl::read_excel(file_path, sheet = sheet_names[4])# identifies any ambiguous taxonomic assignments that should be considered as complexes
+
+# Replace NA values with empty strings
+truncated_fills_df <- truncated_fills_df %>% mutate_all(~ ifelse(is.na(.), "", .))
+otu_groups_df <- otu_groups_df %>% mutate_all(~ ifelse(is.na(.), "", .))
+max_p_update_df <- max_p_update_df %>% mutate_all(~ ifelse(is.na(.), "", .))
+```
+
+# remove identifications below thresholds for species species, genus, family and order
+```{r}
+# Update 'species' column to only include names if max threshold is above 97
+final_df <-  final_df %>%
+  dplyr::mutate(species = if_else(max_p_identity < 97, "", species))
+
+# Update 'genus' column to only include names if max threshold is above 95
+final_df <-  final_df %>%
+  dplyr::mutate(genus = if_else(max_p_identity < 95, "", genus))
+
+# Update 'family' column to only include names if max threshold is above 90
+final_df <-  final_df %>%
+  dplyr::mutate(family = if_else(max_p_identity < 90, "", family))
+
+# Update 'order' column to only include names if max threshold is above 80
+final_df <-  final_df %>%
+  dplyr::mutate(order = if_else(max_p_identity < 85, "",order))
+```
+
+
+# Fill in truncated taxonomic assigments (using sheet 1: truncated_fills_df)
+```{r}
+# Find common IDs
+common_ids <- intersect(truncated_fills_df$asv_code, final_df$asv_code)
+
+print(common_ids)
+
+df1 <- final_df[final_df$asv_code %in% common_ids, ] # asvs in common in final_df
+df2 <- truncated_fills_df[truncated_fills_df$asv_code %in% common_ids, ]  # asvs in common in truncated_fills_df
+df3 <- final_df[!final_df$asv_code %in% common_ids, ] # left data in final dataframe
+
+
+# Update the 'species' value in df1 based on matching 'asv_code'
+for (i in 1:nrow(df1)) {
+  target_asv_code <- df1$asv_code[i]
+  df1$species[i] <- df2$species[df2$asv_code == target_asv_code]
+}
+
+for (i in 1:nrow(df1)) {
+  target_asv_code <- df1$asv_code[i]
+  df1$genus[i] <- df2$genus[df2$asv_code == target_asv_code]
+}
+
+for (i in 1:nrow(df1)) {
+  target_asv_code <- df1$asv_code[i]
+  df1$family[i] <- df2$family[df2$asv_code == target_asv_code]
+}
+
+for (i in 1:nrow(df1)) {
+  target_asv_code <- df1$asv_code[i]
+  df1$order[i] <- df2$order[df2$asv_code == target_asv_code]
+}
+
+for (i in 1:nrow(df1)) {
+  target_asv_code <- df1$asv_code[i]
+  df1$class[i] <- df2$class[df2$asv_code == target_asv_code]
+}
+
+for (i in 1:nrow(df1)) {
+  target_asv_code <- df1$asv_code[i]
+  df1$phylum[i] <- df2$phylum[df2$asv_code == target_asv_code]
+}
+ 
+for (i in 1:nrow(df1)) {
+  target_asv_code <- df1$asv_code[i]
+  df1$kingdom[i] <- df2$kingdom[df2$asv_code == target_asv_code]
+}
+print(df1)
+```
+
+# Add 'OTU' groupings from 'Geneious prime' denovo analysis
+Any unclassified ASVs have been grouped together at a similarity threshold of <3%. These ASVs are denoted with the name 'sp. MC-ARCO'. 
+```{r}
+# Find common IDs
+common_ids2 <- intersect(otu_groups_df$asv_code, df3$asv_code)
+
+df4 <- df3[df3$asv_code %in% common_ids2, ] # asvs in common in remaining final_df
+df5 <- otu_groups_df[otu_groups_df$asv_code %in% common_ids2, ] # asvs in common in truncated_fills_df
+df6 <- df3[!df3$asv_code %in% common_ids2, ] #  data left in final dataframe
+
+# Update the 'species' value in df1 based on matching 'asv_code'
+for (i in 1:nrow(df4)) {
+  target_asv_code <- df4$asv_code[i]
+  df4$species[i] <- df5$species[df5$asv_code == target_asv_code]
+}
+
+for (i in 1:nrow(df4)) {
+  target_asv_code <- df4$asv_code[i]
+  df4$genus[i] <- df5$genus[df5$asv_code == target_asv_code]
+}
+
+for (i in 1:nrow(df4)) {
+  target_asv_code <- df4$asv_code[i]
+  df4$family[i] <- df5$family[df5$asv_code == target_asv_code]
+}
+
+for (i in 1:nrow(df4)) {
+  target_asv_code <- df4$asv_code[i]
+  df4$order[i] <- df5$order[df5$asv_code == target_asv_code]
+}
+
+for (i in 1:nrow(df4)) {
+  target_asv_code <- df4$asv_code[i]
+  df4$class[i] <- df5$class[df5$asv_code == target_asv_code]
+}
+
+for (i in 1:nrow(df4)) {
+  target_asv_code <- df4$asv_code[i]
+  df4$phylum[i] <- df5$phylum[df5$asv_code == target_asv_code]
+}
+ 
+for (i in 1:nrow(df4)) {
+  target_asv_code <- df4$asv_code[i]
+  df4$kingdom[i] <- df5$kingdom[df5$asv_code == target_asv_code]
+}
+
+print(df4)
+```
+# Add in identification data for taxa missing from reference database (sheet 3)
+```{r}
+# Find common IDs
+common_ids3 <- intersect(max_p_update_df$asv_code, final_df$asv_code)
+
+df7 <- df6[df6$asv_code %in% common_ids3, ] # asvs in common in final_df
+df8 <- max_p_update_df[max_p_update_df$asv_code %in% common_ids3, ] # asv requiring updating
+df9 <- df6[!df6$asv_code %in% common_ids3, ] # data left in final dataframe
+
+# Update the 'species' value in df1 based on matching 'asv_code'
+for (i in 1:nrow(df7)) {
+  target_asv_code <- df7$asv_code[i]
+  df7$species[i] <- df8$species[df8$asv_code == target_asv_code]
+}
+
+for (i in 1:nrow(df7)) {
+  target_asv_code <- df7$asv_code[i]
+  df7$genus[i] <- df8$genus[df8$asv_code == target_asv_code]
+}
+
+for (i in 1:nrow(df7)) {
+  target_asv_code <- df7$asv_code[i]
+  df7$family[i] <- df8$family[df8$asv_code == target_asv_code]
+}
+
+for (i in 1:nrow(df7)) {
+  target_asv_code <- df7$asv_code[i]
+  df7$order[i] <- df8$order[df8$asv_code == target_asv_code]
+}
+
+for (i in 1:nrow(df7)) {
+  target_asv_code <- df7$asv_code[i]
+  df7$class[i] <- df8$class[df8$asv_code == target_asv_code]
+}
+
+for (i in 1:nrow(df7)) {
+  target_asv_code <- df7$asv_code[i]
+  df7$phylum[i] <- df8$phylum[df8$asv_code == target_asv_code]
+}
+ 
+for (i in 1:nrow(df7)) {
+  target_asv_code <- df7$asv_code[i]
+  df7$kingdom[i] <- df8$kingdom[df8$asv_code == target_asv_code]
+}
+
+for (i in 1:nrow(df7)) {
+  target_asv_code <- df7$asv_code[i]
+  df7$max_p_identity[i] <- df8$max_p_identity[df8$asv_code == target_asv_code]
+}
+
+print(df7)
+```
+# combine all filled dataframe into a single dataframe
+```{r}
+final_data_filled <- rbind(df1, df4, df7, df9)
+# note the "final_data_filled" and "final_df" should be the same size 
+
+# Check if there are any duplicates in the asv_code column (there should NOT be)
+duplicates <- final_data_filled %>%
+  filter(duplicated(asv_code) | duplicated(asv_code, fromLast = TRUE))
+
+# Print the duplicate rows
+print(duplicates) # You should not get a table
+```
+
+# check 'final_filled_df' for any species complexes and add this information (from sheet 4)
+```{r}
+# Use left_join to match and then mutate to replace the species with complex
+final_data_filled <- final_data_filled %>%
+  left_join(complexes_df, by = c("species" = "bin_name")) %>%
+  mutate(species = ifelse(!is.na(complex), complex, species)) %>%
+  select(-complex)
+
+# Print the modified dataframe
+print(final_data_filled)
+```
+
+```{r}
+# Create directory for saving the file
+dir.create(here::here("results/final_data_summaries"), recursive = TRUE)
+
+# Save filled dataframe
+timestamp <- format(Sys.time(), "%d_%m_%Y")
+
+# Create the file name with the timestamp
+file_name <- here::here(paste0("results/final_data_summaries/MW_vsearch_data_summary_filled_", timestamp, ".csv"))
+
+# Save the dataframe with the new file name
+write.csv(final_data_filled, file = file_name, row.names = FALSE)
+```
+______________________________
+
+## SECTION 2: PCR filtering
+This section is designed to format data and filter it for 'mistagging'. Mistagging or 'tag switching' can occur causing ASVs to be assigned to the wrong sample. This occurs at a low frequency and is usually random. PCR replicates included in the study design help detect and remove these errors. We use three PCR replicates and filter out any species/ASV detections that occur in only one PCR replicate (which are most likely from mistagging). We also add a second flitering step for the five most common ASV (those with the highest number of reads/sequences). These are more likely to be involved in mistagging and can appear in multiple PCR replicate we add a reads threshold for removing these detections.
+
+# Change data to long formmat (list) for PCR replicate filtering 
+Note: This code will need to be configured for each dataset, so that the rows containing the read counts are specified (e.g. pivot_longer(cols = X10BNY29042rep1:Cont3rep1), the 'X10BNY29042rep1:Cont3rep1' will need to be changed to the first and last column name with the reads data for each dataset
+X10BNY29042rep2:X40TOO42700rep1
+```{r}
+# Step 1: Pivot longer to transform selected columns into rows
+metab_long <- final_data_filled %>%
+  pivot_longer(
+    cols = ALD26SS18Hrep1:WTT59SS18Irep2, 
+    names_to = "sample", 
+    values_to = "value"
+  ) %>%
+  filter(value != 0) %>%  # Remove rows where value is zero
+  select(-matches("^X(\\.\\d+)?$"))  # Remove unwanted columns named X, X.1, etc.
+
+# Step 2: Create a 'replicate' column by extracting the last character if it ends in '1' or '2'
+metab_long <- metab_long %>%
+  mutate(
+    replicate = ifelse(grepl("rep[12]$", sample), str_extract(sample, "[12]$"), ""),
+    
+    # Remove both 'SS18' and 'rep1' or 'rep2' from 'sample' to create 'site' column
+    site = sub("rep[12]$", "", sub("SS18", "", sample)),
+    
+    # Extract the last character of 'site' for 'sample_type'
+    sample_type = substr(site, nchar(site), nchar(site))
+  ) %>%
+  # Remove the 'H' and 'I' from the end of the 'site' column after creating sample_type
+  mutate(
+    site = sub("[HI]$", "", site)
+  )
+
+# Step 6: Reorder and rename columns as needed
+metab_long <- metab_long %>%
+  select(sample, replicate, site, sample_type, everything()) %>%  # Adjust column order
+  rename(reads = value)  # Rename 'value' to 'reads'
+
+# Print the transformed data frame
+print(metab_long)
+
+```
+# remove low frequency detections < 5 reads
+```{r}
+metab_long_hf <- metab_long %>%
+  filter(reads >= 5)
+
+metab_long_lf <- metab_long %>%
+  filter(reads < 5)  # Corrected this line
+
+# Verify the number of records before and after filtering
+original_count <- nrow(metab_long)
+hf_count <- nrow(metab_long_hf)
+lf_count <- nrow(metab_long_lf)
+
+cat("Original number of records:", original_count, "\n")
+cat("Number of records with reads >= 5:", hf_count, "\n")
+cat("Number of records with reads < 5:", lf_count, "\n")
+```
+
+# Filtering single PCR replicate detections
+
+# filtering by 'species' subset out data with species ids
+```{r}
+# Subset where 'species' has non-empty character values
+metab_long_with_species <- metab_long_hf %>% filter(!is.na(species) & species != "")
+
+# Subset where 'species' has empty cells or NA (for ASV filtering)
+metab_long_empty_species <- metab_long_hf %>% filter(is.na(species) | species == "")
+```
+
+# filter based on common species as these are more likely to be invovled in misstagging in the dataset
+```{r}
+# Step 1: Group by species and summarize the total reads
+species_reads <- metab_long_with_species %>%
+  group_by(species) %>%
+  summarise(total_reads = sum(reads, na.rm = TRUE)) %>%
+  arrange(desc(total_reads))
+
+# Print species_reads to verify the summarized data
+print(species_reads)
+
+# Step 2: Extract the top 10 species detections based on 'total_reads' values
+top_species <- species_reads %>%
+  top_n(10, wt = total_reads) %>%
+  pull(species)
+
+# Print top_species to verify the top species
+print(top_species)
+
+# Step 3: Filter out reads below 10 for the top 10 species in filtered_dataframe
+filtered_dataframe_top_sp <- metab_long_with_species %>%
+  filter(!(species %in% top_species & reads < 50))
+
+filtered_dataframe_top_sp_rem <- metab_long_with_species %>%
+  filter((species %in% top_species & reads < 50))
+
+# Verify the number of records before and after filtering
+original_count <- nrow(metab_long_with_species)
+filtered_count <- nrow(filtered_dataframe_top_sp)
+
+cat("Original number of records:", original_count, "\n")
+cat("Number of records after filtering:", filtered_count, "\n")
+cat("Number of records removed:", original_count - filtered_count, "\n")
+```
+
+# remove species occurences that don't occur in more than two replicate per site
+The study desigh has two PCR replicates per percentage (10, 20, 30, 40). A conservative replicate filtering approach has been applied a species/ASV will only be retained if it appears in more that two PCR replicates per site (across all replicates and percentages)
+```{r}
+# Remove the count column as it is no longer needed
+# Step 1: Create the counts data frame
+counts_sp <- filtered_dataframe_top_sp %>%
+  group_by(site, species) %>%
+  summarise(count = n(), .groups = 'drop')
+
+# Step 2: Filter out rows where the combination of 'site' and 'species' appears only once
+sp_fil_metab_long_with_species <- filtered_dataframe_top_sp %>%
+  left_join(counts_sp, by = c("site", "species")) %>%
+  filter(count > 2) %>%
+  select(-count)  # Remove the count column as it is no longer needed
+
+# Check samples removed from dataframe
+sp_fil_metab_long_rem <- filtered_dataframe_top_sp %>% filter((species %in% counts_sp$species[counts_sp$count == 1] & site %in% counts_sp$site[counts_sp$count == 2]))
+
+# Verify the number of records before and after filtering
+original_count <- nrow(filtered_dataframe_top_sp)
+filtered_count <- nrow(sp_fil_metab_long_with_species)
+
+cat("Original number of records:", original_count, "\n")
+cat("Number of records after filtering:", filtered_count, "\n")
+cat("Number of records removed:", original_count - filtered_count, "\n")
+```
+
+# remove single ASV occurences
+Remove ASV's with only a single occurrence in a sample (in only one PCR replicate) this targets ASV's without identifications or OTU groupings
+```{r}
+# Step 1: Create the counts_asv data frame
+counts_asv <- metab_long_empty_species %>%
+  group_by(asv_code, site) %>%
+  summarise(count = n(), .groups = 'drop')
+
+# Inspect the counts_asv data frame
+print(counts_asv)
+
+# Step 2: Join and filter based on counts
+asv_fil_metab_long <- metab_long_empty_species %>%
+  left_join(counts_asv, by = c("asv_code", "site")) %>%
+  filter(count > 2) %>%
+  select(-count)  # Remove the count column as it is no longer needed
+
+# Step 3: Verify the number of records before and after filtering
+original_count <- nrow(metab_long_empty_species)
+filtered_count <- nrow(asv_fil_metab_long)
+
+cat("Original number of records:", original_count, "\n")
+cat("Number of records after filtering:", filtered_count, "\n")
+cat("Number of records removed:", original_count - filtered_count, "\n")
+```
+
+# bind filtered and filled dataframes
+```{r}
+#rejoin_dataframes
+filtered_dataframe <- rbind(sp_fil_metab_long_with_species, asv_fil_metab_long)
+
+# Define the values to be removed
+values_to_remove <- c('DrosX', 'Dros', 'MAR2T','MART2', 'Cont')
+
+# Create the new data frame with the rows to be removed
+controls_long <- filtered_dataframe[filtered_dataframe$site %in% values_to_remove, ]
+
+# Update the original data frame to keep only the remaining rows
+filtered_dataframe_samples <- filtered_dataframe[!filtered_dataframe$site %in% values_to_remove, ]
+
+# remove 'NA' from dataframe
+filtered_dataframe_samples <- filtered_dataframe_samples %>%
+  mutate(across(c(kingdom, phylum, class, order, family, genus, species), ~ replace_na(., "")))
+
+```
+
+# check if 'CONTROL SPIKE' is in samples
+```{r}
+if ("CONTROL SPIKE" %in% filtered_dataframe_samples$species) {
+  print("CONTROL SPIKE found")
+} else {
+  print("No CONTROL SPIKE found")
+}
+```
+
+# save data for modeling in long format (includes PCR replicates)
+```{r}
+# Generate a timestamp
+timestamp <- format(Sys.time(), "%d_%m_%Y")
+
+# Create the file name with the timestamp
+file_name <- here::here(paste0("results/final_data_summaries/MW_long_format_", timestamp,".csv"))
+
+# Save the dataframe with the new file name
+write.csv(filtered_dataframe_samples, file = file_name, row.names = FALSE)
+```
+
+# OPTION 1: Summarize values by site (with PCR replicates combined)
+```{r}
+# Summarize the data
+summarized_df <- filtered_dataframe_samples %>%
+  group_by(site, sample_type, kingdom, phylum, class, order, family, genus, species, max_p_identity) %>%  # Group by specified columns including max_p_identity
+  summarise(reads = sum(reads, na.rm = TRUE), .groups = 'drop') %>%  # Sum the reads for each group
+  group_by(site, sample_type, kingdom, phylum, class, order, family, genus, species) %>%  # Group by the main columns again
+  summarise(
+    reads = sum(reads, na.rm = TRUE),  # Sum the reads for each group
+    max_p_identity = ifelse(all(is.na(max_p_identity)), NA, max(max_p_identity, na.rm = TRUE)),  # Handle all NA case
+    .groups = 'drop'
+  )
+
+# Collapse rows by kingdom, phylum, class, order, family, genus, species
+collapsed_df <- summarized_df %>%
+  group_by(site, sample_type, kingdom, phylum, class, order, family, genus, species) %>%
+  summarise(
+    reads = sum(reads, na.rm = TRUE),  # Sum the reads for each group
+    max_p_identity = ifelse(all(is.na(max_p_identity)), NA, max(max_p_identity, na.rm = TRUE)),  # Get max value of max_p_identity
+    .groups = 'drop'
+  )
+
+# Pivot wider to transform the site and sample_type combination into columns
+wide_summarised_df <- collapsed_df %>%
+  unite("site_sample", site, sample_type, sep = "_") %>%  # Combine site and sample_type into one column
+  pivot_wider(names_from = site_sample, values_from = reads, values_fill = 0)  # Fill missing values with 0
+
+# List of columns to modify
+cols_to_modify <- c('kingdom', 'phylum', 'class', 'order', 'family', 'genus', 'species')
+
+# Convert specified columns to character type
+wide_summarised_df[cols_to_modify] <- lapply(wide_summarised_df[cols_to_modify], as.character)
+
+# Replace NA values with empty strings in specified columns
+wide_summarised_df[cols_to_modify][is.na(wide_summarised_df[cols_to_modify])] <- ""
+
+# Print the resulting wide summarized data frame
+print(wide_summarised_df)
+```
+
+#Now aggregate species data so that the same species identification do not occur multiple times
+```{r}
+library(dplyr)
+
+# List of columns to modify
+cols_to_modify <- c('kingdom', 'phylum', 'class', 'order', 'family', 'genus', 'species')
+
+# Convert specified columns to character type
+wide_summarised_df[cols_to_modify] <- lapply(wide_summarised_df[cols_to_modify], as.character)
+
+# Replace NA values with empty strings in specified columns
+wide_summarised_df[cols_to_modify][is.na(wide_summarised_df[cols_to_modify])] <- ""
+
+# Print the resulting wide summarized data frame
+print(wide_summarised_df)
+
+# List of columns to group by
+group_cols <- c('kingdom', 'phylum', 'class', 'order', 'family', 'genus', 'species')
+
+# Identify the columns that are site_per_per (excluding group columns and max_p_identity)
+site_per_cols <- setdiff(colnames(wide_summarised_df), c(group_cols, 'max_p_identity'))
+
+# Collapse rows by kingdom, phylum, class, order, family, genus, species
+collapsed_wide_summarised_df <- wide_summarised_df %>%
+  group_by(across(all_of(group_cols))) %>%
+  summarise(
+    max_p_identity = max(max_p_identity, na.rm = TRUE),  # Get max value of max_p_identity
+    across(all_of(site_per_cols), function(x) sum(x, na.rm = TRUE)),  # Sum the values for the site_per columns
+    .groups = 'drop'
+  )
+
+# Print the collapsed data frame
+print(collapsed_wide_summarised_df)
+```
+
+# save file
+```{r}
+# save filled dataframe
+timestamp <- format(Sys.time(), "%d_%m_%Y")
+
+# Create the file name with the timestamp (NOTE:Change the MiSeq number to the dataset you are working with)
+file_name1 <- here::here(paste0("results/final_data_summaries/MW_sites_wide_format_", timestamp, ".csv")) 
+
+ write.csv(collapsed_wide_summarised_df, file = file_name1, row.names = FALSE)
+```
+
+

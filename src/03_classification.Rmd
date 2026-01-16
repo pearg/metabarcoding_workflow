@@ -69,6 +69,7 @@ Sys.setenv(PATH=paste0("/mnt/galaxy/gvl/software/shared_envs/qiime2_2023-07/bin:
 Sys.setenv(PYTHONPATH="/mnt/galaxy/gvl/software/shared_envs/qiime2_2023-07/lib/python3.8/site-packages/")
 ```
 
+
 ```{r}
 # For the mozzie server, the root disk can run out of space, so it's safer to set the tmp directory 
 # to a different location
@@ -87,21 +88,23 @@ slurm_n_jobs <- 10
 # Create databases for classification
 
 ```{r}
-ref_db_dir <- "/mnt/galaxy/home/mecarew/Documents/DNA_reference_db_construction_final_libraries/final_library"
+
+ref_db_dir <- "/mnt/galaxy/home/mecarew/git/DNA_barcode_reference_database_construction/final_library"
+
 
 db_coi_ids=list(
-  short=file.path(ref_db_dir, "short_db_2023-07.txt"),
-  left=file.path(ref_db_dir, "left_db_2023-07.txt"),
-  right=file.path(ref_db_dir, "right_db_2023-07.txt"),
-  long=file.path(ref_db_dir, "long_db_2023-07.txt")
+  short=file.path(ref_db_dir, "short_db_2024_10.txt"),
+  left=file.path(ref_db_dir, "left_db_2024_10.txt"),
+  right=file.path(ref_db_dir, "right_db_2024_10.txt"),
+  long=file.path(ref_db_dir, "long_db_2024_10.txt")
 )
 
 # FASTA file with COI sequences
 db_fasta_files=list(
-  short=file.path(ref_db_dir, "short_db_2023-07.fasta"),
-  left=file.path(ref_db_dir, "left_db_2023-07.fasta"),
-  right=file.path(ref_db_dir, "right_db_2023-07.fasta"),
-  long=file.path(ref_db_dir, "long_db_2023-07.fasta")
+  short=file.path(ref_db_dir, "short_db_2024_10.fasta"),
+  left=file.path(ref_db_dir, "left_db_2024_10.fasta"),
+  right=file.path(ref_db_dir, "right_db_2024_10.fasta"),
+  long=file.path(ref_db_dir, "long_db_2024_10.fasta")
 )
 ```
 
@@ -210,7 +213,6 @@ classification_prelim_dir <- file.path(results_dir, "classification/preliminary"
 mkdir(classification_prelim_dir)
 ```
 
-
 ```{r}
 if (! big_dataset) {
   # Setup targets
@@ -229,7 +231,7 @@ if (! big_dataset) {
   
   # This can be changed if you want different parameters
   targets$min_consensus <- 0.51
-  targets$p_identity <- 0.8
+  targets$p_identity <- 0.85
   
   targets <- targets %>% 
     mutate(classification_output=
@@ -286,6 +288,7 @@ if (big_dataset) {
 
 #### Run output {.panel-name}
 
+Note: This step can take a long time to run. Not working for large datasets
 
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 if (! big_dataset) {
@@ -526,6 +529,8 @@ write_targets(targets %>% filter(amplicon_group %in% c("short", "right")), file=
 
 #### Run output {.panel-name}
 
+Note: takes 5hr 15min to run 6 samples
+
 ```{r, attr.output='style="max-height: 400px; overflow: auto !important;"'}
 classification <- loadWorkflow(targets=classification_targets,
                                            wf_file="qiime_classification_by_threshold.cwl", 
@@ -533,6 +538,7 @@ classification <- loadWorkflow(targets=classification_targets,
 classification <- set_logs_dir(classification, logs_dir)
 classification@yamlinput$taxonomy_wrapper$path <- 
   file.path(cwl_path, "qiime_classification_by_threshold_wrapper.sh")
+classification@yamlinput$tmp_dir <- tmp_dir_path
 classification@yamlinput$n_threads <- slurm_threads
 classification@yamlinput$output_dir$path <- classification_dir
 classification <- renderWF(classification, 
@@ -603,9 +609,6 @@ if (nzchar(system.file(package="devtools"))) {
 ```{r}
 knitr::knit_exit()
 ```
-
-
-
 
 # =-=-=-=-=-=-=-=-=-=
 
@@ -837,7 +840,3 @@ f2_filtered[[1]][diff[[1]],]
 ```
 Generally, any DNA barcode sequence match to the above 97% would be considered a species level match. At present, I truncate matches of >96%->95% to genus, <95% to >92% to family
 ```
-
-
-
-

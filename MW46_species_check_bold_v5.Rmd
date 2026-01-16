@@ -1,0 +1,446 @@
+---
+title: "unmatched_checks_BOLDv5"
+author: "MCarew"
+date: "2025-04-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+CHRIS: The chunk below pulls out records that are missing from the asv library from the original unfiltered version of 46 site data. I use your synonyms table to add new species names.
+MEL: ok!
+CHIRS#2: I have some temporary code below to make the synonyms table into a format that works with my code. I also found some asv's with missing information or match values (in the case of Caenidae sp. MC-O1) which I did not update correctly. The code below also addresses these issues in the source file.
+
+```{r}
+library(dplyr)
+library(stringr)
+
+wd <- "~/uomShare/wergStaff/MelCarew/git-data/Spring_2018_DNA_metabarcoding_data"
+
+# read in old_mbc_matched output from Chris's find_synonyms.R
+old_mbc_matched <- read.csv(paste0(wd, "/synonym_updates/old_mbc_matched.csv"))
+
+# change column names otu_id to asv_code and asv_seq to asv_seq to align with ARC data
+names(old_mbc_matched)[names(old_mbc_matched) == "otu_id"] <- "asv_code"
+names(old_mbc_matched)[names(old_mbc_matched) == "otu_sequence"] <- "asv_seq"
+
+
+# read in synonyms output from Chris's find_synonyms.R
+synonyms <- read.csv(paste0(wd, "/synonym_updates/synonyms_2025.csv"))
+
+#CHRIS2: There are issues with the synonyms table (see my ARC_species_check_bold_v5_.Rmd) The synonym table needs to have only one id for per species but it doesn't see 'repeated_species_df'. It is best if we have a 1:1 table for my code to work. Below I have removed duplicate (normally outdated species name, a genus subfamily or family name)
+
+#remove duplicated species in synonym df 
+# find duplicated 'specie's names
+duplicated_species <- unique(synonyms$species[duplicated(synonyms$species)])
+
+# extract the subset of the dataframe where the 'species' column is duplicated
+repeated_species_df <- synonyms[synonyms$species %in% duplicated_species, ]
+
+# create a dataframe of the exact combinations to remove
+combinations_to_remove <- data.frame(
+  species = c(
+    "Atalophlebia sp. B-ABV8738",
+    "Atalophlebia sp. B-ABV8739",
+    "Australopelopia sp. MC-1",
+    "Austroargiolestes spp.",
+    "Bayardella sp. MC-B",
+    "Ceratopogonidae sp. MC-8",
+    "Cloeon sp. B-ACM3453",
+    "Contacyphon sp. GB-KM376644",
+    "Contacyphon sp. GB-KM376644",
+    "Hydrophilidae sp. MC-5",
+    "Hydrophilidae sp. MC-5",
+    "Koorrnonga sp. B-ABV9140",
+    "Leptoperla kimminsi",
+    "Limnodrilus hoffmeisteri",
+    "Limnodrilus hoffmeisteri",
+    "Musculium sp. B-ADJ8477",
+    "Nousia sp. B-AAV4106",
+    "Nousia sp. B-AAV4108",
+    "Nousia sp. B-AAV4108",
+    "Nousia sp. B-AAV4108",
+    "Nousia sp. B-ABV9180",
+    "Nousia sp. B-ABY1088",
+    "Parakiefferiella sp. MC-O1",
+    "Paratanytarsus sp. B-AEH7087",
+    "Polypedilum sp. B-ACQ1905",
+    "Pristina longiseta",
+    "Rheotanytarsus juliae",
+    "Sclerocyphon sp. B-ADU1898",
+    "Tanytarsini sp. B-AED8094",
+    "Tanytarsus sp. MC-SC1",
+    "Zavrelimyia sp. B-AEM8756",
+    "Zavrelimyia sp. B-AEN0860",
+    "Zavrelimyia sp. B-AEN2583",
+    "Zavrelimyia sp. B-AEN3922"
+  ),
+  species_new = c(
+    "Atalophlebia sp. B-ABV8732",
+    "Atalophlebia sp. B-ABV8732",
+    "Australopelopia sp. MC-1",
+    "Austroargiolestes",
+    "Bayardella",
+    "Ceratopogonidae sp. MC-8",
+    "Centroptilum sp. B-ACM3453",
+    "Nothocyphon ypsilon",
+    "Nothocyphon ypsilon",
+    "Hydrophilidae",
+    "Enochrus sp. MC-5",
+    "Koorrnonga sp. B-ABV9138",
+    "Leptoperla",
+    "Naididae sp. B-ADJ9699",
+    "Bothrioneurum vejdovskyanum",
+    "Pisidiidae",
+    "Nousia sp. B-ABV9190",
+    "Nousia sp. B-ABV9190",
+    "Nousia sp. B-AAV4108",
+    "Leptophlebiidae",
+    "Nousia sp. B-ABV9190",
+    "Nousia sp. B-ABV9190",
+    "Aphroteniinae",
+    "Paratanytarsus sp. B-ACQ6039",
+    "Polypedilum sp. B-ACS6046",
+    "Naididae",
+    "Rheotanytarsus juliae",
+    "Sclerocyphon sp. B-ADJ0911",
+    "Chironomidae sp. B-AED8094",
+    "Tanytarsus sp. MC-SC1",
+    "Zavrelimyia sp. B-ACD7996",
+    "Zavrelimyia sp. B-ACD7996",
+    "Zavrelimyia sp. B-ACD7996",
+    "Zavrelimyia sp. B-ACD7996"
+  )
+)
+
+synonyms_revised <- synonyms
+
+for (i in 1:nrow(combinations_to_remove)) {
+  species_to_remove <- combinations_to_remove$species[i]
+  species_new_to_remove <- combinations_to_remove$species_new[i]
+
+  synonyms_revised <- synonyms_revised[!(synonyms_revised$species == species_to_remove &
+                                           synonyms_revised$species_new == species_new_to_remove), ]
+}
+
+write.csv(synonyms_revised, "~/uomShare/wergStaff/MelCarew/git-data/metabarcoding_workflow/asv_library/synonyms_revised.csv")
+
+syndups <- synonyms_revised %>%
+count(species) %>%
+filter(n > 1)
+
+# read in original source data
+metabar <- readxl::read_excel(paste0(wd, "/spring2018_metabarcoding_Nov2023.xlsx"), sheet = 2) 
+# change column names otu_id to asv_code and asv_seq to asv_seq to align with ARC data
+names(metabar)[names(metabar) == "otu_id"] <- "asv_code"
+names(metabar)[names(metabar) == "otu_sequence"] <- "asv_seq"
+
+# extract data not in asv libraries
+metabar_unmatched <- metabar %>%
+  select(asv_code, asv_seq, phylum, class, order, family, genus, species, match) %>% filter(!asv_code %in% old_mbc_matched$asv_code) %>% distinct()
+
+##Checking data and correcting issues
+# check for duplicate asvs
+mbdups <- metabar_unmatched %>%
+count(asv_code) %>%
+filter(n > 1)
+# there are duplicate asvs
+
+# extract duplicate asvs in metabar_unmatched
+mismatched_ids <- metabar_unmatched[metabar_unmatched$asv_code %in% mbdups$asv_code, ]
+
+# extract data in asv libraries
+metabar_matched <- metabar %>%
+  select(asv_code, asv_seq, phylum, class, order, family, genus, species, match) %>%
+  filter(asv_code %in% old_mbc_matched$asv_code) %>%
+  distinct()
+
+# extract duplicate asvs in metabar_matched
+mbdups2 <- metabar_matched %>%
+count(asv_code) %>%
+filter(n > 1)
+
+# extract duplicate ids
+mismatched_ids2 <- metabar_matched[metabar_matched$asv_code %in% mbdups2$asv_code, ]
+
+#Issue with Caenidae sp. MC-O1 matches extract for checking
+# For metabar_matched dataframe
+caenidae_matched <- metabar_matched %>%
+  filter(species == "Caenidae sp. MC-O1") %>%
+  select(asv_code, asv_seq, phylum, class, order, family, genus, species, match)
+
+# For metabar_unmatched dataframe
+caenidae_unmatched <- metabar_unmatched %>%
+  filter(species == "Caenidae sp. MC-O1") %>%
+  select(asv_code, asv_seq, phylum, class, order, family, genus, species, match)
+
+all_mismatched_ids <- rbind(mismatched_ids, mismatched_ids2,caenidae_unmatched, caenidae_matched)
+
+# write file to check again databases
+write.csv(all_mismatched_ids, paste0(wd, "/synonym_updates/MW46_all_mismatched_ids.csv"), row.names = FALSE, na = "")
+
+# bring in verified data for corrections
+mismatched_ids_corrections <- read.csv(paste0(wd, "/synonym_updates/MW46_all_mismatched_ids_corrected.csv"))
+
+# Define taxonomy columns you want to update
+taxonomy_cols <- c("asv_seq", "phylum", "class", "order", "family", "genus", "species", "match")
+
+# Function to update a metabar dataframe with corrections
+update_with_corrections <- function(df, corrections_df, id_col = "asv_code", cols_to_update = taxonomy_cols) {
+  df_updated <- df %>%
+    left_join(corrections_df %>% select(all_of(c(id_col, cols_to_update))), by = id_col, suffix = c("", ".new")) %>%
+    mutate(across(all_of(cols_to_update), 
+                  ~ coalesce(get(paste0(cur_column(), ".new")), .x))) %>%
+    select(-ends_with(".new"))
+  return(df_updated)
+}
+
+# Apply to both unmatched and matched dataframes
+metabar_unmatched <- update_with_corrections(metabar_unmatched, mismatched_ids_corrections)
+metabar_matched   <- update_with_corrections(metabar_matched, mismatched_ids_corrections)
+
+# remove corrected asv_code duplicate
+metabar_unmatched <- metabar_unmatched %>%
+  distinct(asv_code, .keep_all = TRUE)
+
+metabar_matched <- metabar_matched %>%
+  distinct(asv_code, .keep_all = TRUE)
+
+# check for duplicate asvs agian
+mbdups <- metabar_unmatched %>%
+count(asv_code) %>%
+filter(n > 1) # zero!
+
+mbdups2 <- metabar_matched %>%
+count(asv_code) %>%
+filter(n > 1) # zero!
+
+
+# read in 'bins' dataframe from Appendix 3 to cross reference asv_library to barcodeID engine results
+bins <- read.csv(paste0(wd, "/synonym_updates/bins.csv"))
+
+### MEL - not sure what your trying to do here. This writes over the previous 
+### result and detects a problem in the attempted join....For now I will 
+### assume that the previous semi_join is what you wanted to do. I get the same
+### answer using the following non-dplyr code
+# metabar_mismatch <- metabar_97_filtered[metabar_97_filtered$species %in% synonyms_nomatch$species,]
+### CW COMMENTED OUT THE FOLLOWING command
+# # Extract records from metabar_97 where species match those in synonyms_nomatch
+# metabar_mismatch <- metabar_97_filtered %>%
+#   inner_join(synonyms_nomatch %>% select(species, species_new), by = "species")
+
+# reduce df so that only one asv_code (asv_code) is present 
+### MEL: this reduces the table by only one record. You need to be careful here. 
+### It means there is a duplicate asv_code with 2 ids.
+### I found it with the following:
+# as.data.frame(metabar_mismatch[duplicated(metabar_mismatch$asv_code) | duplicated(metabar_mismatch$asv_code, fromLast = TRUE),])
+# This shows that 459c52eeb5ba871ed9bf0b918d916471 was called both "Zavrelimyia sp. B-AEN3922" and "Zavrelimyia sp. B-AEN2583" in your data.  The following command just removes the latter species name.  Is that what you really wanted to do?
+# metabar_mismatch_unique <- metabar_mismatch %>%
+#   distinct(asv_code, .keep_all = TRUE)
+#CHRIS2: fixed this up I think!
+
+# some records match and some don't best to check all unmatched records against BOLD version 5 
+
+write.csv(metabar_unmatched, paste0(wd, "/synonym_updates/MW46_unmatched_for_sequences.csv"), row.names = FALSE, na = "")
+```
+
+CHRIS: After having a quick play around I could not work out how to check the sequences by launching the BarcodeID search engine from R, so I search them in batches of 500 (which to a few minutes per batch) and saved the in four output (below). I used the public+private library and the rapid species search function. I started with a 1000 sequences at a time but could not get the the 'combined hits' to download (guessing the file was too large)
+MEL: fair enough...(I had to add the subdirectory BOLDv5_search_results to your paths to get it to work)
+CHRIS#2: this should be fixed now so the directories work
+
+```{r}
+wd2 <- "~/uomShare/wergStaff/MelCarew/git-data/Spring_2018_DNA_metabarcoding_data/synonym_updates/BOLDv5_search_results"
+
+# read in .csv files with bold barcodeID engine results.
+bold_results1 <- read.csv(paste0(wd2, "/MW46_unmatched_1_999_BOLDsearch_results.csv"))
+bold_results2 <- read.csv(paste0(wd2, "/MW46_unmatched_1000_1999_BOLDsearch_results.csv"))
+bold_results3 <- read.csv(paste0(wd2, "/MW46_unmatched_2000_2999_BOLDsearch_results.csv"))
+bold_results4 <- read.csv(paste0(wd2, "/MW46_unmatched_3000_3999_BOLDsearch_results.csv"))
+bold_results5 <- read.csv(paste0(wd2, "/MW46_unmatched_4000_4999_BOLDsearch_results.csv"))
+bold_results6 <- read.csv(paste0(wd2, "/MW46_unmatched_5000_5999_BOLDsearch_results.csv"))
+bold_results7 <- read.csv(paste0(wd2, "/MW46_unmatched_6000_6999_BOLDsearch_results.csv"))
+bold_results8 <- read.csv(paste0(wd2, "/MW46_unmatched_7000_7999_BOLDsearch_results.csv"))
+bold_results9 <- read.csv(paste0(wd2, "/MW46_unmatched_8000_8999_BOLDsearch_results.csv"))
+bold_results10 <- read.csv(paste0(wd2, "/MW46_unmatched_9000_end_BOLDsearch_results.csv"))
+bold_results11 <- read.csv(paste0(wd2, "/MW46_unmatched_1_700_extras_BOLDsearch_results.csv"))
+bold_results12 <- read.csv(paste0(wd2, "/MW46_unmatched_701_1400_extras_BOLDsearch_results.csv"))
+bold_results13 <- read.csv(paste0(wd2, "/MW46_unmatched_1401_end_extras_BOLDsearch_results.csv"))
+
+
+# combine all results into a single file
+bold_results_unmatched_all <- rbind(bold_results1, bold_results2, bold_results3, bold_results4,  bold_results5, bold_results6, bold_results7, bold_results8, bold_results9, bold_results10, bold_results11, bold_results12, bold_results13)
+rm(bold_results1, bold_results2, bold_results3, bold_results4,  bold_results5,  bold_results6, bold_results7, bold_results8, bold_results9, bold_results10, bold_results11, bold_results12, bold_results13)
+
+# rename all results to match other dataframes
+bold_results_unmatched_all <- bold_results_unmatched_all %>%
+  rename(asv_code = Query.ID) %>%
+  rename(bold_species = Species)
+
+#  extract 'bin_url' and place in a new column
+bold_results_unmatched_all <- bold_results_unmatched_all %>%
+  mutate(bin_uri = str_extract(PID..BIN., "(?<=:)(.*?)(?=])"))
+
+# join with 'bins' to add current species names (from our database and previuos checks)
+bold_results_unmatched_all <- bold_results_unmatched_all %>%
+  left_join(bins, by = "bin_uri")
+```
+
+```{r}
+## summarize the bold data keeping the highest value for ID (note this doesn't always give the lowest taxonomy, just the best matching record). Remove PID..BIN. column so duplicate asv_code can be removed.
+bold_results_unmatched_all <- bold_results_unmatched_all %>%
+  select(-"PID..BIN.")
+
+# summarise so there is one  asv_code per row
+bold_results_unmatched_sum <- bold_results_unmatched_all %>%
+  group_by(`asv_code`) %>%
+  slice_max(order_by = `ID.`, n = 1) %>%
+  ungroup() %>%
+  distinct(asv_code, .keep_all = TRUE) # Add this line to remove fully duplicate rows
+```
+
+```{r}
+# add information from synonym table (adds a new column with any matches to the synonym table)
+metabar_unmatched <- metabar_unmatched %>%
+  left_join(synonyms_revised %>% select(species, species_new), by = "species")
+
+# # check for duplicate asvs
+# asv_dup <- metabar_unmatched %>%
+# count(asv_code) %>%
+# filter(n > 1)
+# # there are duplicate asvs
+# asv_dup <- metabar_unmatched[metabar_unmatched$asv_code %in% asv_dup$asv_code, ]
+# # zero now. all good
+
+# check bold IDs against synonym IDs and and previous identifications (orig_species)
+# Perform a left join to join bold ids to other ids
+metabar_unmatched <-metabar_unmatched %>%
+  left_join(bold_results_unmatched_sum %>% select(asv_code, species, ID., bin_uri), by = "asv_code")
+
+
+###MEL: this didn't work for me, because MW46_metabar_mismatchs doesn't have a field called species_new.
+###    Perhaps you could fix that?
+# update column names to avoid confusion
+metabar_unmatched <- metabar_unmatched %>%
+  rename(species_orig = species.x, # original names
+         species_bold = species.y, # names from bold v5 check
+         species_syn = species_new, # names from synonym df
+         bold_match = ID.,# % match from bold v5 check
+         bold_bin_uri = bin_uri) # top bin match from bold v5 check
+
+# # decided against filtering and just looked at it all
+# metabar_unmatched_ck <- metabar_unmatched %>%
+#   filter(
+#     (
+#       species_orig != species_bold |
+#       ((is.na(species_bold) | species_bold == "") & species_orig != "") |
+#       species_orig != species_syn
+#     ))
+
+# save file for checking
+write.csv(metabar_unmatched, paste0(wd, "/synonym_updates/MW46_metabar_unmatched_for_checking_all.csv"), row.names = FALSE, na = "")
+```
+
+CHRIS: I checked the file manually as I could see an easy way to do it in R. I added two column one is what the new name should be and the second are comments. The comments are important for you to read as they point out important changes/updates. The synonyns table seems to differ from the 'bins' dataframe in places. I have not figured out why yet.
+MEL: without being able to look at MW46_metabar_mismatchs (see above), I can't really suggest anything better - At this stage I'm happy enough to use your manually corrected changes (But perhaps you should check the above questions and run it again)
+
+
+```{r}
+# CHRIS: this is the file you should look at
+metabar_unmatched_checked <- read.csv(paste0(wd, "/synonym_updates/MW46_metabar_unmatched_checked_all.csv"))
+# MEL - here's a few checks I ran on this table
+nrow(metabar_unmatched_checked)
+length(unique(metabar_unmatched_checked$asv_code))  
+nrow(unique(metabar_unmatched_checked[c("asv_code","asv_seq")])) 
+
+```
+
+
+CHRIS: Now I have checked the new asv's I thought I'd try the same thing with the asv's already in the library
+
+```{r}
+# pulling out records in the asv library
+metabar_matched <- metabar_matched %>%
+  filter(asv_code %in% old_mbc_matched$asv_code)
+
+# add synonyms
+metabar_matched <- metabar_matched %>%
+    left_join(synonyms_revised %>% select(species, species_new), by = "species")
+
+# save file for searches
+write.csv(metabar_matched, paste0(wd, "/synonym_updates/MW46_metabar_matched_for_sequences.csv"), row.names = FALSE, na = "")
+```
+
+# import search results from bold
+```{r}
+# read in .csv files with bold barcodeID engine results
+bold_results_matched_1 <- read.csv(paste0(wd2, "/MW46_matched_1_700_BOLDsearch_results.csv"))
+bold_results_matched_2 <-read.csv(paste0(wd2, "/MW46_matched_701_end_BOLDsearch_results.csv"))
+                                  
+bold_results_unmatched_all_matched <-rbind(bold_results_matched_1,bold_results_matched_2)
+
+rm(bold_results_matched_1,bold_results_matched_2)
+
+# rename all results to match other dataframes
+bold_results_unmatched_all_matched <- bold_results_unmatched_all_matched %>%
+  rename(asv_code = Query.ID) %>%
+  rename(bold_species = Species)
+
+# Method using extract 'bin_url' and place in a new column
+bold_results_unmatched_all_matched <- bold_results_unmatched_all_matched %>%
+  mutate(bin_uri = str_extract(PID..BIN., "(?<=:)(.*?)(?=])"))
+
+# Now perform the join using the different names
+bold_results_unmatched_all_matched <- bold_results_unmatched_all_matched %>%
+  left_join(bins, by = "bin_uri")
+
+# summarize the bold data keeping the highest value for ID. Remove PID..BIN. column so duplicate asv_code can be removed.
+bold_results_matched_sum <- bold_results_unmatched_all_matched %>%
+  group_by(asv_code) %>%
+  slice_max(order_by = ID., n = 1) %>%
+  ungroup() %>%
+  select(-"PID..BIN.")
+
+# summarize so there is one  asv_code per row
+bold_results_matched_sum <- bold_results_unmatched_all_matched %>%
+  group_by(`asv_code`) %>%
+  slice_max(order_by = `ID.`, n = 1) %>%
+  ungroup() %>%
+  distinct(asv_code, .keep_all = TRUE) # Add this line to remove fully duplicate rows
+```
+
+CHRIS: the results for the asv's already in the library against bold are presented here.
+MEL: I didn't look at this, btu moved on to the final comparison file
+```{r}
+# check bold IDs against synonym IDs and and previous identifications (orig_species)
+# Perform a left join to join bold ids to other ids
+metabar_matched <- metabar_matched %>%
+  left_join(bold_results_matched_sum %>% select(asv_code, species, ID., bin_uri), by = "asv_code") 
+
+# update column names to avoid confusion
+metabar_matched <- metabar_matched %>%
+  rename(species_orig = species.x, # original names
+         species_bold = species.y, # names from bold v5 check
+         species_syn = species_new, # names from synonym df
+         bold_match = ID.,# % match from bold v5 check
+         bold_bin_uri = bin_uri) # top bin match from bold v5 check
+
+write.csv(metabar_matched, paste0(wd, "/synonym_updates/MW46_metabar_matched_for_checking.csv"), row.names = FALSE, na = "")
+```
+
+Final file
+```{r}
+# CHRIS: this is the file you should look at
+
+metabar_matched_checked <- read.csv(paste0(wd,"/synonym_updates/MW46_metabar_matched_checked.csv"))
+
+# MEL - here's a few checks I ran on this table
+nrow(metabar_matched_checked)
+length(unique(metabar_matched_checked$asv_code))  
+nrow(unique(metabar_matched_checked[c("asv_code","asv_seq")])) #all 407, so no dodgy duplicates -good
+## All looks good to me!
+```
+ CHRIS#2: I have not got to it yet but the next step will be for you to check my checks and then for us to make the changes through code to the source files.
+
+

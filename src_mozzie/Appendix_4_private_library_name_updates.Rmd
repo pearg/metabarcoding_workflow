@@ -1,0 +1,254 @@
+---
+title: "private library updates"
+format: html
+editor: visual
+---
+
+```{r}
+library(dplyr)
+library(stringr)
+library(here)
+```
+
+#update private Library - June 2025
+
+```{r}
+# read in current asv library
+file_path <- here::here("asv_source_files_MC/asv_library_corrected.xlsx")
+
+# Get the names of the sheets
+sheet_names <- readxl::excel_sheets(file_path)
+
+# Read the sheets into as dataframes
+asv_lib <- readxl::read_excel(file_path, sheet = sheet_names[1])
+
+max_p_updates <- readxl::read_excel(file_path, sheet = sheet_names[2])  # if required
+
+bin_uris <- readxl::read_excel(file_path, sheet = sheet_names[3])  # if required
+
+# make a df of unique bins with names
+
+bin_uris <- bin_uris %>%
+  filter(!grepl("-", bin_uri)) %>%
+  filter(!is.na(species))
+
+bin_uris_no_dups <- bin_uris %>%
+  group_by(bin_uri) %>%
+  filter(n() == 1) %>%
+  ungroup() %>%
+  arrange(bin_uri)
+
+# MC_cks <- read.csv(here::here("asv_source_files_MC/all_mc_checks.csv"))
+# 
+# MC_cks <- MC_cks %>%
+#   dplyr::rename(bin_uri = bold_bin_uri)
+# 
+# dup_bins_fix <- dup_bins %>%
+#   left_join(
+#     MC_cks %>% select(bin_uri, checked_species_name),
+#     by = "bin_uri"
+#   ) %>% distinct()
+
+#write.csv(dup_bins_fix, (here::here("asv_source_files_MC/dup_bins_fix.csv")
+
+bins_dup_fix <- read.csv(here::here("asv_source_files_MC/dup_bins_fixed.csv"))
+
+bin_uris_no_dups <- bin_uris_no_dups <- bin_uris_no_dups %>%
+  filter(!bin_uri %in% bins_dup_fix$bin_uri)
+                           
+bins_no_name_tax <- read.csv(here::here("asv_source_files_MC/bins_no_species_name.csv"))
+
+bins_no_name <- bins_no_name_tax  %>%  select(species, bin_uri)                     
+                           
+bin_uri_unq <- rbind(bin_uris_no_dups, bins_dup_fix, bins_no_name) #%>% distinct(bin_uri, species, .keep_all = TRUE) #2473 unique bins
+
+any(duplicated(bin_uri_unq$bin_uri))
+
+
+# Fix naming issues i.e. same species with different taxonomy. needed to be manually checked
+asv_tax_names_fix <- read.csv(here::here("asv_source_files_MC/asv_tax_fixed_names.csv"))
+
+#add theses changes to the library                             
+asv_lib <- asv_lib %>%
+  left_join(
+    asv_tax_names_fix %>%
+      select(species, kingdom, phylum, class, order, family, genus),
+    by = "species"
+  ) %>%
+  mutate(
+    kingdom = coalesce(kingdom.y, kingdom.x),
+    phylum = coalesce(phylum.y, phylum.x),
+    class = coalesce(class.y, class.x),
+    order = coalesce(order.y, order.x),
+    family = coalesce(family.y, family.x),
+    genus = coalesce(genus.y, genus.x)
+  ) %>%
+  select(-ends_with(".x"), -ends_with(".y"))
+```
+
+```{r}
+# most recent private library
+priv_lib <- read.csv(here::here("asv_source_files_MC/priv_lib_Nov23_all.csv"))
+
+# read in .csv files with bold barcodeID engine results.
+bold_results1 <- read.csv(here::here("asv_source_files_MC/private_DNAbarcode_1_1000_BOLD_results.csv"))
+bold_results2 <- read.csv(here::here("asv_source_files_MC/private_DNAbarcode_1001_2000_BOLD_results.csv"))
+bold_results3 <- read.csv(here::here("asv_source_files_MC/private_DNAbarcode_2001_2450_BOLD_results.csv"))
+bold_results4 <- read.csv(here::here("asv_source_files_MC/private_DNAbarcode_2450_end_BOLD_results.csv"))
+
+# combine all results into a single file
+bold_results_priv_all <- rbind(bold_results1, bold_results2, bold_results3, bold_results4)
+
+# rename all results to match other dataframes
+bold_results_priv_all <- bold_results_priv_all %>%
+  dplyr::rename(id = Query.ID,
+         species_bold = Species,
+         genus = Genus,
+         family = Family,
+         order = Order, 
+         class = Class,
+         phylum = Phylum
+         )
+
+# Method using extract 'bin_url' and place in a new column
+bold_results_priv_all <- bold_results_priv_all %>%
+  mutate(bin_uri = str_extract(PID..BIN., "(?<=:)(.*?)(?=])"))
+
+bold_results_priv_all <- bold_results_priv_all %>%
+  left_join(
+    bin_uri_unq %>% select(bin_uri, species),
+    by = "bin_uri"
+  )
+
+# summarize the bold data keeping the highest value for ID. Remove PID..BIN. column so duplicate bin_uri_unq can be removed.
+bold_results_priv_all <- bold_results_priv_all %>%
+  select(-"PID..BIN.")
+
+bold_results_priv_sum <- bold_results_priv_all %>%
+  group_by(id) %>%
+  # Flag entries with a usable BIN (non-NA and ID. >= 97)
+  mutate(has_good_bin = !is.na(bin_uri) & ID. >= 97) %>%
+  # Arrange so the preferred match comes first
+  arrange(id, desc(has_good_bin), desc(ID.)) %>%
+  # Keep the top-ranked record per id
+  slice_head(n = 1) %>%
+  ungroup() %>%
+  # Rename species to species_bin for tracking
+  dplyr::rename(species_bin = species) %>%
+  # Fill species_bold with species_bin if available
+  mutate(
+    species_bold = ifelse(!is.na(species_bin), species_bin, species_bold)
+  ) %>%
+  # Final renaming
+  dplyr::rename(
+    species = species_bold,
+    bold_match = ID.
+  )
+
+priv_lib <- priv_lib  %>%
+  left_join(bold_results_priv_sum
+     %>% select(id, bin_uri, bold_match),
+    by = "id"
+  )
+
+priv_lib <- priv_lib %>%
+  left_join(bin_uri_unq %>% select(bin_uri, species),
+    by = "bin_uri"
+  ) %>% dplyr::rename(species = species.x,
+                species_asv_lib_name = species.y) 
+```
+
+```{r}
+priv_lib_diff <- priv_lib %>%
+  filter(
+    !is.na(species),
+    !is.na(species_asv_lib_name),
+    species != species_asv_lib_name,
+    bold_match >= 97
+  ) # 683
+
+priv_lib_match <- priv_lib %>%
+  mutate(species = if_else(bold_match >= 97 & !is.na(species_asv_lib_name), species_asv_lib_name, species))
+```
+
+```{r}
+# replace with updated name
+
+priv_lib_diff_updated <- priv_lib_diff %>%
+  select(-species) %>%
+  dplyr::rename(species = species_asv_lib_name) %>%
+  mutate(
+    species = case_when(
+      str_squish(species) == "Tasmanocoenis tillyardi/rieki" ~ "Tasmanocoenis sp. B-ACG1634",
+      TRUE ~ species
+    )
+  )
+
+# new names not aleady in database	
+priv_lib_match <- priv_lib_match %>%
+  mutate(
+    species = case_when(
+      bin_uri == "AABW2839" ~ "Contacyphon lindensis",
+      bin_uri == "AAD7362" ~ "Cladopelma sp. B-AAD7362",
+      bin_uri == "ACQ6934" ~ "Cladopelma sp. B-ACQ6934",
+      species == "Australocyclops sp. MC-1" ~ "Australocyclops sp. B-ADR2310",
+      species == "Hygrobatidae sp. MC-BC2" ~ "Hygrobatidae sp. B-AGP1020",
+      species == "Curculionidae sp. MC-1" ~ "Curculionidae sp. B-AGM9740",
+      species == "Hydraena sp. MC-3" ~ "Hydraena sp. B-AEH5095",
+      species == "Hydraena sp. MC-7" ~ "Hydraena sp. B-AGL5899",
+      species == "Scirtidae sp. MC-9" ~ "Scirtidae sp. B-AED1932",
+      species == "Libnotes sp." ~ "Libnotes sp. B-AAN4393",
+      species == "Molophilus sp. B-AAW0957" ~ "Molophilus sp. B-AAW0957",
+      species == "Ischnotoma sp." ~ "Ischnotoma sp. B-ACA4609",
+      species == "ParaLimnophila sp. ZB-TypeA" ~ "Paralimnophila sp. B-ACM3183",
+      species == "Lauterborniella sp. MC-1" ~ "Lauterborniella sp. B-ADY1618",
+      species == "Diplodontus haliki" ~ "Hydryphantidae sp. MC-1",
+      species == "Limnophyes sp. B-ABW2734" ~ "Limnophyes sp. MC-B",
+      species == "Gordiidae sp. MC-1" ~ "Gordiidae sp. B-AGK7267",
+      species == "Cladopelma sp. B-AAD7362" ~ "Cladopelma sp. B-ACQ6934",
+      species == "Ozeoura sp. ZB-T20259" ~ "Ozeoura sp. B-AGB3427",
+      species == "Limnophila sp. ZB-EPAsp30" ~ "Limnophila sp. B-AGC6410",
+      species == "Tonnoiromyia sp. ZB-EPAsp3" ~ "Tonnoiromyia sp. B-AGD0043",
+      species == "Rhabdomastix sp. ZB-EPAsp38" ~ "Rhabdomastix sp. B-AGD1474",
+      species == "Collessophila sp." ~ "Collessophila sp. B-AGE2515",
+      species == "Psychodidae sp. MC-7" ~ "Psychodidae sp. B-AGK4242",
+      species == "Ceratopogonidae sp. MC-27" ~ "Ceratopogonidae sp. B-AGN3457",
+      species == "Ceratopogonidae sp. MC-43" ~ "Ceratopogonidae sp. B-AGQ9834",
+      species == "Ceratopogonidae sp. MC-39" ~ "Ceratopogonidae sp. B-AGR9369",
+      species == "Orthocladiinae sp. MC-J" ~ "Orthocladiinae sp. B-AGN3242",
+      species == "Orthonychiurus sp. MC-1" ~ "Orthonychiurus sp. B-ACG0182",
+      species == "Empididae sp. MC-Co1" ~ "Empididae sp. MC-BC2",
+      species == "Aeschnidae sp. MC-BC1" ~ "Aeshnidae sp. MC-BC1",
+      species == "Chironominae sp. MC-A2" ~ "Conochironomus sp. MC-A2",
+      species == "Uropodoidea sp. B-AEI1796" ~ "Blattisociidae sp. B-AEI1796",
+      (id) == "Co18Caen5" ~ "Tasmanocoenis sp. MC-1", # correction
+      TRUE ~ species
+    ),
+    # Genus corrections
+    genus = case_when(
+      genus == "ParaLimnophila" ~ "Paralimnophila",
+      genus == "Diplodontus" ~ "",
+      species == "Conochironomus sp. MC-A2" ~ "Conochironomus",
+      TRUE ~ genus
+    ),
+    # bin_uri reassignment based on species
+    bin_uri = case_when(
+      species == "Paratanytarsus grimmii" ~ "AAD1485",
+      species == "Potamopyrgus antipodarum" ~ "ABY5556",
+      species == "Triplectides truncatus" ~ "ADF0434",
+      species == "Tanytarsus sp. B-AAE1904" ~ "AAE1904",
+      species == "Austropeplea tomentosa" ~ "AAW3092",
+      TRUE ~ bin_uri
+    )
+  ) %>% select(-species_asv_lib_name)
+
+priv_lib_diff_updated2 <- priv_lib_match %>%
+  filter(!id %in% priv_lib_diff_updated$id)
+
+priv_lib <- rbind(priv_lib_diff_updated2, priv_lib_diff_updated)
+                  
+priv_lib <- priv_lib %>%
+  mutate(sequence_name = paste0(gsub(" ", "_", species), "-", id))
+
+write.csv(priv_lib, here::here("asv_source_files_MC/priv_lib_updated_2_10_2025.csv"), row.names = FALSE)
+```

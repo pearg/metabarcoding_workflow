@@ -1,0 +1,104 @@
+---
+title: "18s"
+author: "MCarew"
+date: "2024-11-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+miseq_folder <- "miseq21"
+
+uomshare <- paste0("~/uomShare/wergStaff/MelCarew/git-data/metabarcoding_workflow/",miseq_folder,"/metabarcoding_workflow")
+
+#uomshare <- paste0("~/uomShare/wergStaff/MelCarew/git-data/",miseq_folder,"/metabarcoding_workflow")
+#read in final vsearch data summaries
+g18s_prelsearch <- read.delim(paste0(uomshare, "/g18s_vsearch.tsv"), header = FALSE)
+g18s_tax <- read.table(file = paste0(uomshare, "/18s_db_2024-06.txt"), sep = "\t", quote = "", comment.char = "")
+
+```
+
+```{r}
+library(dplyr)
+
+# Assuming `g18s_tax` has columns V1 and V2
+# Rename `V1` column in `g18s_tax` to make the join easier
+colnames(g18s_tax) <- c("V1_tax", "V2_tax")
+
+# Perform a left join to add a new column based on matching values
+g18s_prelsearch <- g18s_prelsearch %>%
+  left_join(g18s_tax, by = c("V2" = "V1_tax")) %>%
+  # Rename the joined column as desired, e.g., "New_Column"
+  mutate(New_Column = V2_tax) %>%
+  # Remove any temporary columns from join if not needed
+  select(-V2_tax)
+
+# Check the results
+head(g18s_prelsearch)
+
+```
+```{r}
+# Create a new dataframe with selected columns
+vsearch_taxon_df <- g18s_prelsearch %>%
+  select(V1, V3, New_Column)
+
+# View the result
+head(new_df)
+
+vsearch_taxon_df$New_Column <- gsub("k__", "", vsearch_taxon_df$New_Column)
+vsearch_taxon_df$New_Column <- gsub("p__", "", vsearch_taxon_df$New_Column)
+vsearch_taxon_df$New_Column <- gsub("c__", "", vsearch_taxon_df$New_Column)
+vsearch_taxon_df$New_Column <- gsub("o__", "", vsearch_taxon_df$New_Column)
+vsearch_taxon_df$New_Column <- gsub("f__", "", vsearch_taxon_df$New_Column)
+vsearch_taxon_df$New_Column <- gsub("g__", "", vsearch_taxon_df$New_Column)
+vsearch_taxon_df$New_Column <- gsub("s__", "", vsearch_taxon_df$New_Column)
+
+# place taxonomic data in separate columns
+vsearch_taxon_df <- tidyr::separate(vsearch_taxon_df, New_Column, into = c("kingdom", "phylum", "class", "order", "family", "genus","species"), sep = ";",  fill = "right")
+
+library(dplyr)
+
+library(dplyr)
+
+library(dplyr)
+
+# Create a new dataframe with only rows where V3 > 98
+filtered_df <- vsearch_taxon_df %>%
+  filter(V3 > 98)
+
+# View the resulting dataframe
+head(filtered_df)
+
+# Create the file name with the timestamp 
+file_name <- paste0(uomshare, miseq_folder, "_vsearch_data_summary.csv")
+# Save the dataframe with the new file name
+write.csv(filtered_df, file = file_name, row.names = FALSE)
+
+```
+```{r}
+# Create a new dataframe with only rows where V3 > 98
+filtered_df2 <- vsearch_taxon_df %>%
+  filter(V3 < 98)
+
+below97 <- filtered_df2 %>%
+  filter(!V1 %in% filtered_df$V1)
+
+below97_unique <- below97 %>%
+  group_by(V1) %>%
+  slice_max(order_by = V3, n = 1) %>%
+  ungroup()
+
+print(max_rows)
+
+# Create the file name with the timestamp 
+file_name2 <- paste0(uomshare, miseq_folder, "below97_unique.csv")
+
+# Save the dataframe with the new file name
+write.csv(below97_unique, file = file_name2, row.names = FALSE)
+
+```
+
+

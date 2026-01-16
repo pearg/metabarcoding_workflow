@@ -1,0 +1,937 @@
+---
+title: "Appendix 3. Importing miseq data into Melbourne Water macroinvertebrate database"
+format: html
+editor_options: 
+  chunk_output_type: console
+---
+
+## Introduction
+
+This document reads the miSeq data prepared in the first 6 metabarcoding workflow documents. The code in this document consolidates the data, and formats them ready to be imported into the [Melbourne Water macroinvertebrate database](https://tools.thewerg.unimelb.edu.au/mwbugs/) (mwbugs database).  The code in the document begins by making a connection to the main PostgreSQL database on the University of Melbourne Server. For users outside the unimelb network, the database can be accessed using the instructions in Appendix B of Walsh (2025)[^1].
+
+[^1]: Walsh, C.J. (2025) The Melbourne Water macroinvertebrate database: user’s manual. Version 2.1. Melbourne Waterway Research-Practice Partnership Report 20.1b. School of Agriculture, Forest and Ecosystem Sciences, The University of Melbourne, Melbourne. URL: https://tools.thewerg.unimelb.edu.au/mwbugs_manual/.
+
+The first part of the document assembles taxonomic tables from the asv_library compiled in Appendix 2, and generates new taxoncodes from its species.  
+
+```{r}
+#| label: setup
+
+source("https://tools.thewerg.unimelb.edu.au/data/mwbugs/bug_database_functions.R")
+
+# Connect to the mwbugs database and load all tables (using the load_all_mwbugs_tables.R 
+#  from bug_database_functions.R)
+
+db <- RPostgres::dbConnect(drv = RPostgres::Postgres(), dbname = "mwbugs")
+
+load_all_mwbugs_tables(db)
+
+# Function equivalent to excel's =RIGHT() and =LEFT() functions
+right <- function(x, n) {substr(x, nchar(x) - n + 1, nchar(x))}
+left <- function(x, n) {substr(x, 1, nchar(x) - n)}
+
+# List of candidate character pairs for filling bugcodes
+# avoid confusion of 0s and Os - exclude Os, and exclude Zs which are reserved for unknowns
+all_prs <- expand.grid(x = c(0:9,LETTERS[-c(15,26)]), 
+                       y = c(0:9,LETTERS[-c(15,26)]), stringsAsFactors = FALSE)
+all_prs <- all_prs[order(all_prs$x),]
+all_prs$prs <- paste0(all_prs$x, all_prs$y)
+# and remove all 0s combined with letters and 00
+zeros <- which((grepl("0", all_prs$prs) & 
+                  grepl("[A-Z]", all_prs$prs)) | all_prs$pr == "00")
+all_prs <- all_prs[-zeros,]
+# order with numbers first, and mark numbers
+all_prs$number <- 0
+# suppressWarnings, because as.numeric warns about introduction of NAs, which this next line deals with
+all_prs$number[!is.na(suppressWarnings(as.numeric(all_prs$prs)))] <- 1
+all_prs <- all_prs[order(all_prs$number, decreasing = TRUE),]
+# order alphabetic codes so that A1 comes before 1A etc...(probably won't use 1A etc)
+all_prs <- rbind(all_prs[all_prs$number == 1,],
+                 all_prs[grepl("[A-Z]", all_prs$x) & all_prs$number == 0,],
+                 all_prs[!grepl("[A-Z]", all_prs$x) & all_prs$number == 0,])
+
+```
+
+1. Import the asv_library as compiled in Appendix 2.
+
+Correct taxonomy names prior to matching to the database
+
+```{r}
+
+# Before we begin, I need to remove 4633 duplicate records already in taxon_spp (an error with the 46-site data?)
+taxon_spp <- unique(taxon_spp)
+
+# Bold results table used in Appendix 2
+bold_results <- read.csv("~/uomShare/wergStaff/MelCarew/git-data/metabarcoding_workflow/asv_source_files/match_bold_v5.csv")
+
+# Trial run with asv_library taxa (note this creates new bugdata_spp, gen etc from above)
+tfill <- as.data.frame(readxl::read_excel("~/uomShare/wergStaff/MelCarew/git-data/metabarcoding_workflow/asv_library/asv_library_corrected.xlsx",
+                       sheet = "tfill"))
+tfill <- tfill[tfill$aqu == 1,] #19,708 records
+
+# aqu really only indicates those records that have gone through the full check. Some should still be removed as 
+# being not (necessarily) aquatic or macroinvertebrates
+tfill <- only_aqu_inverts(tfill, db, TRUE)$include # 19,706...not sure I believe that. Let's come back to it.
+# remove dubious_id records
+tfill <- tfill[tfill$dubious_id == 0,] #19,677
+tfill_spp_bins <- as.data.frame(readxl::read_excel("~/uomShare/wergStaff/ChrisW/temp/asv_library_corrected.xlsx",
+                       sheet = "bin_uris"))
+tfill_spp_bins <- tfill_spp_bins[tfill_spp_bins$asv_code %in% tfill$asv_code,] #23,215 species/bin combos
+bugdata <- unique(tfill[c("kingdom","phylum","class","order","family","genus","species")]) #1,160 unique identifications
+bugdata_spp <- bugdata[!is.na(bugdata$species),] #1003
+bugdata_gen <- bugdata[is.na(bugdata$species) & !is.na(bugdata$genus),] #94
+bugdata_fam <- bugdata[is.na(bugdata$species) & is.na(bugdata$gen) & !is.na(bugdata$family),] #48
+bugdata_oth <- bugdata[is.na(bugdata$species) & is.na(bugdata$gen) & is.na(bugdata$family),] #15
+bugdata_oth <- bugdata_oth[!is.na(bugdata_oth$order) & 
+                             bugdata_oth$order %in% c("Ephemeroptera","Plecoptera",
+                                                       "Trichoptera","Anaspidacea"),] #3
+#of the last, only solely freshwater orders can be considered definitely aquatic for inclusion in the database
+
+# Some named species are also similarly uncertain:
+bugdata_spp_nam <- bugdata_spp[is.na(bugdata_spp$family),]
+bugdata_spp_nam1 <- bugdata_spp[is.na(bugdata_spp$genus) & !is.na(bugdata_spp$family),]
+
+# None of the species identified to class or order can be classed as freshwater with certainty 
+unique(bugdata_spp_nam$order) #"Enchytraeida","Haplotaxida","Trombidiformes","Diptera","Isopoda","Coleoptera","Plumatellida" 
+# and should be removed from bugdata_spp
+bugdata_spp <- bugdata_spp[!bugdata_spp$species %in% bugdata_spp_nam$species,] #980
+
+# 6 families in bugdata_spp_nam1 contain only some species with aquatic life-history stages 
+bugdata_spp <- bugdata_spp[!bugdata_spp$species %in% 
+                              bugdata_spp_nam1$species[bugdata_spp_nam1$family %in% 
+                                                 c("Carabidae", "Chrysomelidae","Nanophyidae", 
+                                                   "Empididae", "Muscidae","Stratiomyidae")],] #952
+# Note: I have included Psychodidae and other families, where a minority of species may not be aquatic
+#       and I included Olindidae and Sphaeromatidae - mostly marine families, but with representatives 
+#       in lowland river reaches. These records should be checked for feasibility.
+
+
+# Check all families are in the mwbugs database
+all_fams <- unique(c(bugdata_spp$family, bugdata_gen$family, bugdata_fam$family))
+all_fams <- all_fams[!is.na(all_fams)] #139
+non_match_fams <- all_fams[!all_fams %in% c(taxon_fam$family, 
+                            taxon_fam$subfamily[!is.na(taxon_fam$subfamily)])] #0 non-matching
+# Check all genera are in the mwbugs database
+all_genera <- unique(c(bugdata_spp$genus, bugdata_gen$genus))
+all_genera <- all_genera[!is.na(all_genera)]
+non_match_gen <-  all_genera[!all_genera %in% taxon_gen$genus] # 0 non-matching
+```
+
+The following identifies new species to be added to the database.  As the 46-site data was added prior to finalization of species groups, I will remove the 46-site bugdata altogether, and removing any "B-" species names that ended up being folded into species groups...
+
+```{r}
+
+#Remove all taxa that had been added on the initial problematic delivery of the 46-site data
+old_dna_spp <- unique(taxon_spp$species[!is.na(taxon_spp$tempNote) & 
+                taxon_spp$tempNote == "Added by CW for Spring 2018 barcoding data"])
+old_dna_spp[!old_dna_spp %in% bugdata_spp$species]
+# All of these species are likely valid (although no longer in the asv_library) 
+# with no reason to remove except for 
+to_remove <- c("Chamaedrilus aff. sphagnetorum","'Anatopynia' sp. 3",
+               "'Anatopynia' sp. 4")
+taxon_spp <- taxon_spp[!taxon_spp$species %in% to_remove,] #4,633, down from 4,635
+taxon_all <- taxon_all[!taxon_all$taxon %in% to_remove,] # unchanged
+
+old_dna_morphospp <- unique(morphospp_etc$lowesttaxon[ 
+          morphospp_etc$type == "DNA barcoded species without confirmed identification" |
+          (!is.na(morphospp_etc$tempNote) & 
+             morphospp_etc$tempNote == "Added by CW for Spring 2018 e-DNA data")])
+# very few of which remain valid after revision of asv_library - 
+# And some of the valid ones belong in taxon_spp. best to remove all and start again
+morphospp_etc <- morphospp_etc[!morphospp_etc$lowesttaxon %in% old_dna_morphospp,] #570 down from 954
+
+all_spp <- unique(bugdata_spp$species)  #951
+new_spp <- all_spp[!all_spp %in% c(taxon_spp$species, morphospp_etc$lowesttaxon)] #578
+
+# Worth exploring groups as a final check of tfill, I think
+groups <- all_spp[grepl(" group", all_spp) | grepl("\\/", all_spp)]
+group_members <- data.frame(group = NA, n_bins = NA, bins = NA, species = NA, min_sim = NA)[0,]
+for(i in 1:length(groups)){ # takes a minute to run...
+  spp_binsi <- tfill_spp_bins[tfill_spp_bins$species == groups[i],]
+  binsi <- unique(spp_binsi$bin_uri)
+  asvsi <- unique(spp_binsi$asv_code)
+  boldi <- bold_results[0,]
+  for(j in 1:length(asvsi)){
+    boldi <- unique(rbind(boldi, 
+                   bold_results[bold_results$asv_code == asvsi[j] & bold_results$bin_uri %in% binsi,]))
+  }
+  boldi_97 <- boldi[boldi$similarity >= 97,]
+  bold_spp <- unique(boldi_97$species) 
+  # just those names with >= 2 words
+  bold_spp <- bold_spp[sapply(strsplit(bold_spp," "),length) >= 2]
+  bold_spp <- bold_spp[!right(bold_spp,4) == " sp."]
+  bold_spp <- paste0("('",paste(unique(paste(sapply(strsplit(bold_spp," "),"[[",1), 
+                     sapply(strsplit(bold_spp," "),"[[",2))), collapse = "', '"), "')")
+  group_members <- rbind(group_members,
+                  data.frame(group = groups[i],
+                             n_bins = length(binsi),
+                             bins = paste0("('",paste( binsi, collapse = "', '"), "')"),
+                             species = bold_spp,
+                             min_sim = min(boldi$similarity)))
+}
+# group_members[i,] ; i <- i + 1
+
+# CW manually checked all form_spp names against mwbugs taxon_spp. 
+form_spp <- new_spp[!grepl("MC-",new_spp) & !grepl("B-",new_spp) & !grepl(" group", new_spp) &
+                    !grepl("/", new_spp)]
+form_spp <- form_spp[order(form_spp)]
+
+correct_words <- taxon_spp$species[stringdist::amatch(form_spp, taxon_spp$species, maxDist = Inf)]
+data.frame(form_spp, correct_words)
+
+# # Visual inspection revealed equivalences, manually corrected either n the database or in tfill
+# "Adversaeschna brevistyla"="Aeshna brevistyla", # the former is current
+# "Anax papuensis"="Hemianax papuensis", # the former is current
+# "Austrocnephia orientalis"="Paracnephia orientalis") # the former is more current
+# "Dicranomyia whitei whitei"="Dicranomyia whitei" # changed above
+# "Megogata necopina"="Megogota necopina"  # corrected in database
+# "Notalina bifara"="Notalina bifaria" # corrected in next version of App 2 script
+# "Offadens nr. confluens"="Offadens confluens" # a diffferent species. Leave it
+# "Riekoperla cf. intermedia"="Riekoperla intermedia" # a diffferent species. Leave it
+# For the first three, I added entries to the taxon_syns table in the database and changed the species names in taxon_spp and taxon_all in build_mwbugs_db.R
+
+# for identifying families from species names using subfamilies
+subfams <- read.csv("~/uomShare/wergStaff/MelCarew/git-data/metabarcoding_workflow/asv_source_files/taxon_subfams_partial.csv")
+
+taxon_spp[!taxon_spp$spcode %in% taxon_all$shortcode,]
+taxon_gen[!taxon_gen$spcode %in% taxon_all$shortcode,]
+taxon_fam[!taxon_fam$spcode %in% taxon_all$shortcode,]
+taxon_rank1[!taxon_rank1$spcode %in% taxon_all$shortcode,]
+# All good, no entries in any of these tables not in taxon_all, however, some problems the other way
+
+taxon_all[taxon_all$table == "taxon_spp",][!taxon_all$shortcode[taxon_all$table == "taxon_spp"] %in% taxon_spp$spcode,]
+# 4 records, none in the biota table, so delete all
+taxon_all <- taxon_all[!taxon_all$shortcode %in% taxon_all$shortcode[taxon_all$table == "taxon_spp"][!taxon_all$shortcode[taxon_all$table == "taxon_spp"] %in% taxon_spp$spcode],]
+taxon_all[taxon_all$table == "morphospp_etc",][!taxon_all$shortcode[taxon_all$table == "morphospp_etc"] %in% morphospp_etc$taxoncode,]
+x <- biota[biota$taxoncode %in% taxon_all$shortcode[taxon_all$table == "morphospp_etc"][!taxon_all$shortcode[taxon_all$table == "morphospp_etc"] %in% morphospp_etc$taxoncode],]
+unique(x$smpcode) # all AL or AM samples, which are going to be removed and replaced, so remove
+taxon_all <- taxon_all[!taxon_all$shortcode %in% taxon_all$shortcode[taxon_all$table == "morphospp_etc"][!taxon_all$shortcode[taxon_all$table == "morphospp_etc"] %in% morphospp_etc$taxoncode],]
+taxon_all[taxon_all$table == "taxon_gen",][!taxon_all$shortcode[taxon_all$table == "taxon_gen"] %in% taxon_gen$gencode,]
+taxon_all[taxon_all$table == "taxon_fam",][!taxon_all$shortcode[taxon_all$table == "taxon_fam"] %in% taxon_fam$famcode,]
+taxon_all[taxon_all$table == "taxon_rank1",][!taxon_all$shortcode[taxon_all$table == "taxon_rank1"] %in% taxon_rank1$t1code,]
+taxon_spp[!taxon_spp$spcode %in% taxon_all$shortcode,]
+taxon_gen[!taxon_gen$spcode %in% taxon_all$shortcode,]
+taxon_fam[!taxon_fam$spcode %in% taxon_all$shortcode,]
+taxon_rank1[!taxon_rank1$spcode %in% taxon_all$shortcode,]
+# OK, all consistent now, so carry on creating new bugcodes...
+
+new_spp <- data.frame(bugcode = NA, species = new_spp, mwbugs_table = NA)
+for(i in 1:nrow(new_spp)){
+  spi <- new_spp$species[i]
+  geni <- strsplit(spi, " ")[[1]][1]
+  gencode_i <- taxon_gen$gencode[taxon_gen$genus == geni]
+  if(length(gencode_i) > 0){
+#    if(substr(gencode_i,1,2) %in% c("IF","IB")) stop("1")
+  if(i == 1) new_spp_gencodes <- NULL
+  if(i > 1) new_spp_gencodes <- new_spp$bugcode[1:(i-1)][grep(geni, new_spp$species[1:(i-1)])]
+  all_geni_codes <- c(taxon_spp$spcode[taxon_spp$gencode == gencode_i],
+                      morphospp_etc$taxoncode[substr(morphospp_etc$lowesttaxon,1,6) == geni],
+                      new_spp_gencodes)
+  used_suffixes <- substr(all_geni_codes,7,8)
+  if(geni %in% taxon_gen$genus){
+  if(!grepl("MC-",spi) & !grepl("B-",spi) & !grepl(" group", spi) & !grepl("/", spi)){
+ # If it is a formal species name, give it the next numeric code.
+     used_suffixes <- used_suffixes[used_suffixes %in% all_prs$prs[all_prs$number == 1]]
+     new_spp$bugcode[i] <- paste0(gencode_i, all_prs$prs[all_prs$number == 1 & 
+                                                     !all_prs$prs %in% used_suffixes][1])
+     new_spp$mwbugs_table[i] <- "taxon_spp"
+  }else{
+  # or else, give it the next alphanumeric code.
+     used_suffixes <- used_suffixes[used_suffixes %in% all_prs$prs[all_prs$number == 0]]
+     new_spp$bugcode[i] <- paste0(gencode_i, all_prs$prs[all_prs$number == 0 & 
+                                                     !all_prs$prs %in% used_suffixes][1])
+     new_spp$mwbugs_table[i] <- "taxon_spp"
+  }
+    }
+    }else{
+      #If species only identified to family or subfamily...
+    if(geni %in% subfams$subfamily & !geni %in% taxon_fam$subfamily){
+      geni <- subfams$family[subfams$subfamily == geni & !is.na(subfams$subfamily)]
+    }
+    if(geni %in% taxon_fam$family){
+      famcodei <- taxon_fam$famcode[taxon_fam$family == geni]
+      if(geni == "Chironomidae") famcodei <- "QDAZ"
+    }else{
+    if(geni %in% taxon_fam$subfamily){
+      famcodei <- taxon_fam$famcode[!is.na(taxon_fam$subfamily) & taxon_fam$subfamily == geni]
+      if(geni == "Chironominae") famcodei <- "QDAJ"
+    }
+    }
+    if(length(famcodei) > 0)
+#    if(substr(famcodei,1,2) %in% c("IF","IB")) stop("2")
+      if(i == 1) new_spp_fam99codes <- NULL
+      if(i > 1) new_spp_fam99codes <- new_spp$bugcode[substr(new_spp$bugcode,1,6) == 
+                                             paste0(famcodei,"99")][1:(i-1)]
+    allfam99i_codes <- c(taxon_all$shortcode[substr(taxon_all$shortcode,1,6) == 
+                                             paste0(famcodei,"99")],
+                         new_spp_fam99codes)
+    used_suffixes <- substr(allfam99i_codes,7,8)
+    used_suffixes <- used_suffixes[used_suffixes %in% all_prs$prs[all_prs$number == 0]]
+    new_spp$bugcode[i] <- paste0(famcodei, "99", all_prs$prs[all_prs$number == 0 & 
+                                                     !all_prs$prs %in% used_suffixes][1])
+    new_spp$mwbugs_table[i] <- "morphospp_etc"
+    }
+}
+
+# Check this doesn't introduce any duplicate bugcodes
+dups <- c(new_spp$bugcode, taxon_all$shortcode)[duplicated(c(new_spp$bugcode, taxon_all$shortcode))]
+dups %in% c(taxon_spp$spcode, morphospp_etc$taxoncode)
+taxon_spp[taxon_spp$spcode %in% dups[dups %in% c(taxon_spp$spcode, morphospp_etc$taxoncode)],] #No duplicates!
+
+taxon_spp <- rbind(taxon_spp,
+                       data.frame(gencode = substr(new_spp$bugcode,1,6),
+                            spcode = new_spp$bugcode,
+                            species = new_spp$species,
+                            tempNote = "added by CW for ARC metabarcoding project",
+                            taxonomic_note = NA)[new_spp$mwbugs_table == "taxon_spp",])
+taxon_spp <- taxon_spp[order(taxon_spp$spcode),]
+
+taxon_all <- rbind(taxon_all, data.frame(shortcode = new_spp$bugcode,
+                                         taxon = new_spp$species, 
+                                         table = "taxon_spp"))
+##### Only checked as far as here.....
+morphospp_etc <- rbind(morphospp_etc, 
+                       data.frame(taxoncode = new_spp$bugcode,
+                                lowesttaxon = new_spp$species,
+                                type = "DNA barcoded species",
+                                tempNote = "added by CW for ARC metabarcoding project",
+                                t1code = substr(new_spp$bugcode,1,2))[new_spp$mwbugs_table == "morphospp_etc",])
+
+taxon_all$table[taxon_all$shortcode %in% 
+                  new_spp$bugcode[new_spp$mwbugs_table == "morphospp_etc"]] <-
+  "morphospp_etc"
+
+taxon_all <- rbind(taxon_all, data.frame(shortcode = new))
+
+tfill <- dplyr::mutate(tfill, shortcode = NA, .before = max_p_identity)
+nocodes <- vector()
+for(i in 1:nrow(tfill)){
+  if(!is.na(tfill$species[i])){
+    if(tfill$species[i] %in% c(taxon_spp$species,morphospp_etc$lowesttaxon)) {
+    tfill$shortcode[i] <- ifelse(tfill$species[i] %in% taxon_spp$species,
+                    taxon_spp$spcode[taxon_spp$species == tfill$species[i]],
+                    morphospp_etc$taxoncode[morphospp_etc$lowesttaxon == tfill$species[i]])
+    }
+    }else{
+   if(!is.na(tfill$genus[i])){
+     tfill$shortcode[i] <- taxon_gen$gencode[taxon_gen$genus == tfill$genus[i]]
+   }else{
+   if(!is.na(tfill$family[i])){
+     fami <- tfill$family[i]
+     if(grepl("inae",fami)){ 
+       tfill$shortcode[i] <- taxon_fam$famcode[taxon_fam$subfamily == tfill$family[i]]
+     }else{
+     tfill$shortcode[i] <- ifelse(fami == "Chironomidae", "QDAZ",
+                                  taxon_fam$famcode[taxon_fam$family == fami])
+   }
+     }else{
+     if(!is.na(tfill$order[i]) & tfill$order[i] == "Ephemeroptera") tfill$shortcode[i] <- "QE"
+     if(!is.na(tfill$order[i]) & tfill$order[i] == "Plecoptera") tfill$shortcode[i] <- "QP"
+     if(!is.na(tfill$order[i]) & tfill$order[i] == "Trichoptera") tfill$shortcode[i] <- "QT"
+     if(!is.na(tfill$order[i]) & tfill$order[i] == "Anaspidacea") tfill$shortcode[i] <- "ON"
+     if(!is.na(tfill$order[i]) & tfill$order[i] == "Decapoda") tfill$shortcode[i] <- "OT" 
+         # assume Caridea, given earlier ID of these last ones as Atyidae
+       # The aquaticness/macroinvertebrateness of all the rest are too uncertain
+       # and should be removed from contention for the database
+   }
+   }
+  }
+}
+# sum(is.na(tfill$shortcode)) # 453 not given a shortcode
+unique(tfill$class[is.na(tfill$shortcode)])
+unique(tfill$order[is.na(tfill$shortcode)])
+# All look worthy of exclusion based on uncertain habit.
+tfill <- tfill[!is.na(tfill$shortcode),]  # down to 19,200
+
+taxon_seq <- tfill[c("shortcode","asv_code","asv_sequence","max_p_identity","amplicon")]
+
+asv_bin <- tfill_spp_bins[tfill_spp_bins$asv_code %in% tfill$asv_code,] #22862 out of 23050
+asv_bin <- taxon_asv_bin[names(taxon_asv_bin) != "species"]
+
+taxon_seq$taxon <- taxon_all$taxon[match(taxon_seq$shortcode, taxon_all$shortcode)]
+asv_bin$taxon <- taxon_seq$taxon[match(asv_bin$asv_code,taxon_seq$asv_code)]
+asv_bin$shortcode <- taxon_seq$shortcode[match(asv_bin$asv_code,taxon_seq$asv_code)]
+species_bin <- unique(asv_bin[nchar(asv_bin$shortcode) == 8,c("taxon","bin_uri")])
+bins_per_spp <- aggregate(species_bin["bin_uri"], 
+                          by = list(species = species_bin$taxon), FUN = length)
+# revert to original minimalist tables
+taxon_seq <- tfill[c("shortcode","asv_code","asv_sequence","max_p_identity","amplicon")]
+asv_bin <- asv_bin[c("asv_code","bin_uri","similarity")]
+
+db_revised <- list(taxon_all = taxon_all, taxon_spp = taxon_spp, 
+                   morphospp_etc = morphospp_etc, 
+                   taxon_seq = taxon_seq,
+                   asv_bin = asv_bin)
+writexl::write_xlsx(db_revised, "~/uomShare/wergStaff/ChrisW/temp/db_revised.xlsx")
+```
+
+The following code pre-dates the finalization of the asv_library, and requires some work....
+
+The following chunk compiles the miseq_samples, samples, and bugdata tables from the source files for 6 miseq runs, checking for and correcting consistency between the tables (with checks back to lab notes for corrections.)
+
+The bugdata is separated into four tables (spp, gen, fam, other) to separate records identified to species (or species group) from those identified to genus, family or a higher level of taxonomy (other).
+
+```{r}
+#| echo: true
+
+# Compile all sample data
+miseq_dirs <- c(15,16,17,18,19,20)
+
+for(i in 1:length(miseq_dirs)){
+  miseq_path <- paste0("~/uomShare/wergStaff/MelCarew/git-data/metabarcoding_workflow/miseq", miseq_dirs[i],"/")
+  miseq_sample_info <- paste0("miseq",miseq_dirs[i], "_sample_information.xlsx")
+  samples_i <- rio::import_list(paste0(miseq_path,miseq_sample_info))
+  miseq_samples_i <- samples_i$miseq_samples
+  miseq_samples_i$miseq_run <- miseq_dirs[i]
+  #@@ table naming error in miseq15
+  names(samples_i)[names(samples_i) == "sample"] <- "samples"
+  smpcodes_i <- samples_i$samples
+  #@@ column inconsistencies in miseq15, 18, 19, 20
+  names(miseq_samples_i)[names(miseq_samples_i) == "comments"] <- "comment"
+  names(miseq_samples_i)[names(miseq_samples_i) == "notes"] <- "comment"
+  smpcodes_i <- smpcodes_i[,!names(smpcodes_i) %in% c("...7","amplicon")]
+  names(miseq_samples_i)[names(miseq_samples_i) == "position"] <- "plate_position"
+  names(miseq_samples_i)[names(miseq_samples_i) == "i7 index"] <- "i7_index"
+  names(miseq_samples_i)[names(miseq_samples_i) == "i5 index"] <- "i5_index"
+  
+#  bugdata_file <- dir(paste0(miseq_path, "metabarcoding_workflow/final_modeling_data"))
+#  Most recent file - check contents of bugdata_file above to confirm!
+  bugdata_file <- paste0("miseq", miseq_dirs[i], 
+                         # MC revised miseq18 data after first run of this file identified a problem
+                         ifelse(miseq_dirs[i] == 18, 
+                                "_final_data_long_format_26_02_2025.csv",
+                                "_final_data_long_format_18_02_2025.csv"))
+  bugdata_i <- read.csv(paste0(miseq_path, "metabarcoding_workflow/final_modeling_data/", bugdata_file))
+  #@@ smpcode inconsistencies in miseq18
+  miseq_samples_i$smpcode[miseq_samples_i$smpcode == "388-BF3-373-3"] <- "388-BF3-373"
+  #@@ seq_code inconsistencies in miseq15, 18
+  miseq_samples_i$seq_code <- gsub("30DNG79574","30DNG318813",miseq_samples_i$seq_code)
+  miseq_samples_i$seq_code <- gsub("A22XZZ3644","A22X223644",miseq_samples_i$seq_code)
+  
+#  bugdata_i$sample <- gsub("A22YZ2161","A22YZ2162", bugdata_i$sample)
+  report_i <- data.frame(miseq = miseq_dirs[i], no_bug_rows = nrow(bugdata_i), 
+                         no_bug_rows_NA = sum(is.na(bugdata_i$species)), no_new_seqs = NA)
+  bugdata_i <- only_aqu_inverts(bugdata_i, db)$include
+  
+  # Check uniqueness and consistency
+  if(sum(duplicated(smpcodes_i$smpcode)) > 0)  stop("1")
+  if(sum(duplicated(miseq_samples_i$seq_code)) > 0)  stop("2")
+  # Check only entries in smpcodes_i table with NA smpcodes are controls/refs
+  # Note tolower() necessary because of inconsistencies with capitalization
+  if(sum(!tolower(substr(smpcodes_i$seq_code[is.na(smpcodes_i$smpcode)], 1, 4)) %in% 
+          tolower(c("MAR2","Dros","Cont","MART","CO1C","COIC"))) > 0) stop("3")
+  smpcodes_i <- smpcodes_i[!is.na(smpcodes_i$smpcode) & 
+                             !tolower(substr(smpcodes_i$smpcode,1,4)) %in%
+                              tolower(c("MAR2","Dros","cont","MART","CO1C","COIC")),]
+  miseq_samples_i <- miseq_samples_i[!tolower(substr(miseq_samples_i$seq_code, 1, 4)) 
+                                     %in% tolower(c("MAR2","Dros","Cont","MART","CO1C","COIC")),] 
+  #@@ smpcodes missing from reps 4,5,and 6 in miseq15
+  missing_smpcodes <- which(is.na(miseq_samples_i$smpcode))
+  for(j in missing_smpcodes){
+    miseq_samples_i$smpcode[j] <- miseq_samples_i$smpcode[miseq_samples_i$seq_code == 
+                                                            paste0(left(miseq_samples_i$seq_code[j],4), "rep1")]
+  }
+  # #####@@@@ remove miseq18 samples that were re-run in miseq19
+    if(miseq_dirs[i] == 18){
+  smpcodes_i <- smpcodes_i[smpcodes_i$smpcode != miseq_samples_i$smpcode[miseq_samples_i$seq_code == "A22YZ2162rep3"],]
+  miseq_samples_i <- miseq_samples_i[!miseq_samples_i$seq_code %in% c("A22YZ2162rep3","A22YZ2162rep1","A22YZ2162rep2"),]
+  bugdata_i <- bugdata_i[!bugdata_i$sample %in% c("A22YZ2162rep3","A22YZ2162rep1","A22YZ2162rep2"),]
+}
+  # ####@@@@ and non-matching sample codes in the bugdata file
+  if(miseq_dirs[i] == 19){
+    # Miscoding errors corrected as per emails from Mel 4/12/2024 and 10/12/2024
+    miseq_samples_i$smpcode[miseq_samples_i$seq_code == "A22YZ7161rep1"] <- "389-YZ2-162"
+    miseq_samples_i$seq_code[miseq_samples_i$seq_code == "A22YZ7161rep1"] <- "A22YZ2162rep1"
+    bugdata_i$sample[bugdata_i$sample == "A22BF3373rep1"] <- "A22BF3373rep4"
+    bugdata_i$sample[bugdata_i$sample == "A22BF3373rep2"] <- "A22BF3373rep5"
+    bugdata_i$sample[bugdata_i$sample == "A22BF3373rep3"] <- "A22BF3373rep6"
+  }
+  if(miseq_dirs[i] == 20){
+    # Miscoding errors corrected as per email from Mel 4/12/2024
+    bugdata_i$sample[bugdata_i$sample == "S22ALL58rep2"] <- "S22ALL558rep4"
+    bugdata_i$sample[bugdata_i$sample == "S22ALL58rep3"] <- "S22ALL558rep5"
+    bugdata_i$sample[bugdata_i$sample == "S22ALL58rep4"] <- "S22ALL558rep6"
+  }
+  ####@@@@
+  if(sum(is.na(match(miseq_samples_i$smpcode,smpcodes_i$smpcode))) > 0) stop("4")
+  if(sum(!smpcodes_i$smpcode %in% miseq_samples_i$smpcode) > 0) stop("5")
+
+  # Check and compile bug data
+  # Consistency between miseq_samples table and bugdata table.
+  # MISSING bugdata: rep2 for this smpcode did not produce enough reads and was 
+  # not re-run (see email from Mel 4/12/2024). Delete miseq_sample
+  miseq_samples_i <- miseq_samples_i[miseq_samples_i$seq_code != "S21ANS16116rep2",]
+  # delete re-run samples from 10-site study (see email from Mel 4/12/2024)
+  miseq_samples_i <- miseq_samples_i[!miseq_samples_i$seq_code %in% 
+      c("Elut30DNG318813rep1","S21Elut30DNG318813rep2","Elut30DNG318813rep3"),]
+  smpcodes_i <- smpcodes_i[smpcodes_i$smpcode != "DNG-7957-4",]
+  bugdata_i <- bugdata_i[!bugdata_i$sample %in% 
+                           c("Elut30DNG79574rep1", "Elut30DNG79574rep2", "Elut30DNG79574rep3"),]
+  ##@@@ Incorrect sitecode in miseq18 and 19 and 20
+  miseq_samples_i$seq_code <- gsub("X223644","XZZ3644", miseq_samples_i$seq_code)
+  bugdata_i$sample <- gsub("X223644","XZZ3644", bugdata_i$sample)
+ # bugdata_i$sample <- gsub("ALL58","ALL558", bugdata_i$sample)
+  #@@ spurious Xs at start of sample codes in miseq15
+  bugdata_i$sample[substr(bugdata_i$sample,1,1) == "X"] <- 
+    substr(bugdata_i$sample[substr(bugdata_i$sample,1,1) == "X"], 2,
+           nchar(bugdata_i$sample[substr(bugdata_i$sample,1,1) == "X"]))
+  if(sum(!unique(bugdata_i$sample) %in% miseq_samples_i$seq_code) > 0) stop("7")
+  # if(sum(!miseq_samples_i$seq_code %in% unique(bugdata_i$sample)) > 0) 
+  #   cat(miseq_samples_i$seq_code[!miseq_samples_i$seq_code %in% unique(bugdata_i$sample)],
+  #       "miseq",miseq_dirs[i],"\n")
+  # The above commented-out bit is ok - it identifies a couple of seq_codes that were re-run
+  # and a couple of other problems identified in the next chunk.
+  
+  # unique(bugdata_i$sample)[!unique(bugdata_i$sample) %in% miseq_samples_i$seq_code]
+  # miseq_samples_i$seq_code[!miseq_samples_i$seq_code %in% unique(bugdata_i$sample)]
+  # As directed by Mel in email of 4 Dec 2024, remove species with MC_ARCO in their name
+  bugdata_i$species[grep("MC-ARCO", bugdata_i$species)] <- ""
+  # Remove "environmental sample" records 
+  bugdata_i <- bugdata_i[!grepl("environmental", bugdata_i$species) & 
+                           !grepl("uncultured zooplankton", bugdata_i$species),]
+  # ensure no trailing or leading spaces
+  bugdata_i$genus <- stringr::str_trim(bugdata_i$genus)
+  # Check consistency with sample tables
+
+  bugdata_i_spp <- bugdata_i[bugdata_i$species != "",]
+  # Should all be similarity >= 0.97
+  if(sum(bugdata_i_spp$max_p_identity < 0.97) > 0) stop("A")
+  bugdata_i_gen <- bugdata_i[bugdata_i$species == "" & bugdata_i$genus != "",]
+  bugdata_i_fam <- bugdata_i[bugdata_i$species == "" & bugdata_i$genus == "" & bugdata_i$family != "",]
+  bugdata_i_oth <- bugdata_i[bugdata_i$species == "" & bugdata_i$genus == "" & bugdata_i$family == "",]
+  # These four tables should contain all records from bugdata_i 
+  if(sum(nrow(bugdata_i_spp),nrow(bugdata_i_gen),nrow(bugdata_i_fam),nrow(bugdata_i_oth)) != nrow(bugdata_i)) stop("B")
+  if(i == 1){
+    bugdata_spp <- bugdata_i_spp
+    bugdata_gen <- bugdata_i_gen
+    bugdata_fam <- bugdata_i_fam
+    bugdata_oth <- bugdata_i_oth
+    smpcodes <- smpcodes_i
+    miseq_samples <- miseq_samples_i
+  }else{
+    bugdata_spp <- rbind(bugdata_spp, bugdata_i_spp)
+    bugdata_gen <- rbind(bugdata_gen, bugdata_i_gen)
+    bugdata_fam <- rbind(bugdata_fam, bugdata_i_fam)
+    bugdata_oth <- rbind(bugdata_oth, bugdata_i_oth)
+    smpcodes <- rbind(smpcodes, smpcodes_i)
+    if(sum(miseq_samples_i$seq_code %in% miseq_samples$seq_code) > 0 )  stop("8")
+    miseq_samples <- rbind(miseq_samples, miseq_samples_i)
+  }
+}
+# 2 rogue terrestrials to be deleted.
+bugdata_gen <- bugdata_gen[bugdata_gen$genus != "Chrysophtharta",]
+bugdata_spp <- bugdata_spp[bugdata_spp$genus != "Eufairmairia",]
+```
+
+Some samples were re-run because of insufficient reads (or other reasons), often in a subsequent miseq run.  The following chunk finds such cases (where there are replicate 1, 2, and 3 and 4, 5, and 6), and keeps only replicates 4, 5 and 6.
+ 
+```{r}
+
+# Correct spelling errors (Unnecessary ones kept for tfill run-through, just in case!)
+# One lingering spelling error found
+# bugdata_spp$species[bugdata_spp$species == "Austrochiltonia sp. MC1"] <- "Austrochiltonia sp. MC-1"
+# bugdata_spp$species[bugdata_spp$species == "Tamasia acuta/Tamasia variegata"] <- "Tamasia acuta/variegata"
+# bugdata_spp$species <- gsub("ParaLimnophila","Paralimnophila",bugdata_spp$species)
+# bugdata_spp$genus[!is.na(bugdata_spp$genus) &  bugdata_spp$genus == "ParaLimnophila"] <- "Paralimnophila"
+# bugdata_spp$species <- gsub("Aeschnidae","Aeshnidae",bugdata_spp$species)
+# bugdata_spp$species[bugdata_spp$species == "Nososticta solitaris"] <- "Nososticta solitaria"
+# # bugdata_spp$family[!is.na(bugdata_spp$family) & bugdata_spp$family == "Trapezidae"] <- "Trapeziidae"
+# # # Some Staphylinidae with order = Diptera
+# bugdata_spp$order[!is.na(bugdata_spp$family) &  bugdata_spp$family == "Staphylinidae"] <- "Coleoptera"
+# # 5 family-level records identified as Unionidae. Genbank match gastropod ~92% - delete
+# bugdata_fam <- bugdata_fam[!is.na(bugdata_spp$family) & bugdata_fam$family != "Unionidae",]
+# # 6 family-level records identified as Unionidae.  Genbank match gastropod ~92% - delete
+# bugdata_fam <- bugdata_fam[!is.na(bugdata_spp$family) &  bugdata_fam$family != "Arcidae",]
+# # Unidentified higher-order records of unknown (likely terrestrial) ecology.  Exclude  
+
+
+
+sample_reps <- aggregate(miseq_samples$seq_code, 
+                         by = list(seq_code = miseq_samples$smpcode), FUN = length)
+# sum(!sample_reps$x[i] %in% c(3,6) > 0)  # 0 as expected
+  for(j in which(sample_reps$x == 6)){
+    miseq_samples <- miseq_samples[!(miseq_samples$smpcode == sample_reps$seq_code[j] &
+                                           right(miseq_samples$seq_code, 1) %in% 1:3),]
+  }
+
+bugdata_spp <- bugdata_spp[bugdata_spp$sample %in% miseq_samples$seq_code,]
+bugdata_gen <- bugdata_gen[bugdata_gen$sample %in% miseq_samples$seq_code,]
+bugdata_fam <- bugdata_fam[bugdata_fam$sample %in% miseq_samples$seq_code,]
+bugdata_oth <- bugdata_oth[bugdata_oth$sample %in% miseq_samples$seq_code,]
+
+#### Need to remove these seq_codes from the miseq_sample table  
+#  (seq_code A22BT2373rep3 & A23YAR36377rep3 not in bugdata_spp table)
+#  miseq_samples[!miseq_samples$seq_code %in% unique(bugdata_spp$sample),]
+miseq_samples <- miseq_samples[miseq_samples$seq_code %in% unique(bugdata_spp$sample),]
+
+unq_smpcodes <- unique(miseq_samples$smpcode)
+# need to associate correct smpcodes with each miseq_samples record. Keep (commonly) incorrect smpcodes as smpcode_mc
+miseq_samples <- dplyr::mutate(miseq_samples, smpcode_mc = smpcode, .after = smpcode)
+miseq_samples <- dplyr::mutate(miseq_samples, 
+                               extraction_name = substr(miseq_samples$seq_code, 1, nchar(miseq_samples$seq_code) - 4), 
+                                .after = smpcode_mc)
+
+# Field/planning sample details
+a = as.data.frame(readxl::read_excel("~/uomShare/wergData/DNA_Barcoding/DNA barcoding samples processing Spr2021.xlsx"))
+samples_a <- a[c("sitecode","sample_code","Actual Date","monthcode","Extraction name","number of riffle")]
+samples_a$comment <- NA
+samples_a$comment[!is.na(samples_a$`Actual Date_ghd`)] <- "collected by GHD"
+samples_a$comment[!is.na(samples_a$`Actual Date_UoM`)] <- "collected by G Hehir, Unimelb"
+samples_a$comment[!(is.na(samples_a$`Actual Date_ghd`) & is.na(samples_a$`Actual Date_uom`))] <- "collector unspecified"
+names(samples_a) <- c("sitecode","smpcode_f","date","monthcode","extraction_name","n_riffle","comment")
+samples_a$n_riffle[is.na(samples_a$n_riffle)] <- 0 # checked a, and both these samples had two edge samples in them
+# samples_a[!samples_a$smpcode_f %in% unq_smpcodes,]  # 3 French I sites, not sampled: exclude them
+samples_a <- samples_a[samples_a$smpcode_f %in% unq_smpcodes,]
+# MC removed hyphens from extraction names between tables...
+samples_a$extraction_name <- gsub("-","",samples_a$extraction_name)
+# And 8 still inconsistent....
+# inconsistent_smpcodes <- samples_a$smpcode_f[!samples_a$extraction_name %in% miseq_samples$extraction_name]
+# unique(miseq_samples$extraction_name[miseq_samples$smpcode_mc %in% inconsistent_smpcodes])
+# samples_a$extraction_name[samples_a$smpcode_f %in% inconsistent_smpcodes]
+# OK...all but one extraction_name in samples_a missing final digit, and for the last one, the digit is missing in miseq_samples! Fix the exception first
+samples_a$extraction_name[samples_a$extraction_name == "S21LER234922"] <- "S21LER23492"
+inconsistent_ens <- samples_a$extraction_name[!samples_a$extraction_name %in% miseq_samples$extraction_name]
+samples_a$extraction_name[match(inconsistent_ens, samples_a$extraction_name)] <- 
+  paste0(inconsistent_ens, right(samples_a$sitecode[match(inconsistent_ens, samples_a$extraction_name)],1))
+# sum(!samples_a$extraction_name %in% miseq_samples$extraction_name)  # 0: all match now
+# sum(samples_a$monthcode != calcMonthDate(samples_a$date)) # zero: good
+# sum(!samples_a$smpcode_f %in% miseq_samples$smpcode) # 0: good - all 137 samples_a$smpcode_f in miseq_samples.
+samples_a <- samples_a[samples_a$smpcode_f %in% unq_smpcodes,]
+sum(samples_a$sitecode != substr(samples_a$smpcode_f,5,nchar(samples_a$smpcode_f))) # 0 all consistent.
+sum(!samples_a$reach %in% sites$reach) # 0
+sum(!samples_a$sitecode %in% sites$sitecode) # 14 sitecodes not consistent with sites table
+samples_a$sitecode[!samples_a$sitecode %in% sites$sitecode]
+# All except STV_2279-4 and UYT-199-4 are reaches rather than sitecodes
+samples_a$sitecode[samples_a$sitecode == "UYT-199-4"] <- "UYT-199-3" # smpcode weirdly right
+samples_a$sitecode[samples_a$sitecode == "STV-2279-4"] <- "STV-2279-5"
+samples_a$smpcode[samples_a$sitecode == "STV-2279-5"] <- "384-STV-2279-5"
+# fix the remaining 12
+inconsistent_sites <- samples_a$sitecode[!samples_a$sitecode %in% sites$sitecode]
+corrected_sites <- sites$sitecode[match(inconsistent_sites,sites$reach)]
+
+samples_a$sitecode[match(inconsistent_sites, samples_a$sitecode)] <- corrected_sites
+samples_a$smpcode[match(corrected_sites, samples_a$sitecode)] <- 
+  paste(samples_a$monthcode, samples_a$sitecode, sep = "-")[match(corrected_sites, samples_a$sitecode)]
+# additional fields to be consistent with c and d below
+samples_a$sitecode_mc <- samples_a$sitecode
+samples_a <- dplyr::mutate(samples_a, reach = sites$reach[match(samples_a$sitecode, sites$sitecode)],
+                           .after = "sitecode")
+
+sum(!samples_a$sitecode %in% sites$sitecode) # 0
+sum(!samples_a$extraction_name %in% miseq_samples$extraction_name) # 0 (so sites, samples_a, and miseq_samples, consistent)
+
+b <- as.data.frame(readxl::read_excel("~/uomShare/wergData/DNA_Barcoding/DNA barcoding sample processing Aut2022.xlsx"))
+samples_b <- data.frame(sitecode  = b$sitecode, 
+                        smpcode_f = NA, # No sample code field in b
+                        date = b$`Actual Date_uom`,
+                        extraction_name = b$`Extraction name`,
+                        n_riffle = b$`number of riffle`)
+# 26 NA n_riffles, but checking the 'no_of_kick_jars' field n b, all these samples included a riffle
+samples_b$n_riffle <- 1
+# remove whitespaces
+samples_b$sitecode <- stringr::str_trim(samples_b$sitecode)
+samples_b$extraction_name <- stringr::str_trim(samples_b$extraction_name)
+samples_b$date[samples_b$sitecode == "TOO-4334-2"] <- as.Date("2022-05-12")
+samples_b$date[is.na(samples_b$date)] <- b$`Actual Date_ghd`[is.na(samples_b$date)]
+samples_b$monthcode <- calcMonthDate(samples_b$date)
+samples_b$comment <- NA
+samples_b$comment[!is.na(b$`Actual Date_ghd`)] <- "collected by GHD"
+samples_b$comment[!is.na(b$`Actual Date_uom`)] <- "collected by G Hehir, Unimelb"
+samples_b$comment[samples_b$sitecode == "TOO-4334-2"] <- "collected by GHD"
+sum(!samples_b$extraction_name %in% miseq_samples$extraction_name)  # 0: all consistent
+# so, as there is no sample code field in f, make smpcode_f equal to smpcodes in miseq_samples
+samples_b$smpcode_f <- miseq_samples$smpcode_mc[match(samples_b$extraction_name, miseq_samples$extraction_name)]
+samples_b$smpcode <- samples_b$smpcode_f
+# Mix of reaches and sitecodes
+samples_b$reach <- samples_b$sitecode
+samples_b$reach[stringr::str_count(samples_b$sitecode,"-") == 2] <- 
+  substr(samples_b$reach[stringr::str_count(samples_b$sitecode,"-") == 2], 1, 
+         nchar(samples_b$reach[stringr::str_count(samples_b$sitecode,"-") == 2]) - 2)
+# WM1 (Wombat Creek) with wrong sitecode.
+samples_b$reach[samples_b$reach == "WM1-232"] <- "WM1-244"
+samples_b$sitecode <- sites$sitecode[match(samples_b$reach, sites$reach)]
+samples_b$smpcode <- paste(samples_b$monthcode, samples_b$sitecode, sep = "-")
+# additional field to be consistent with c and d below
+samples_b$sitecode_mc <- samples_b$sitecode
+
+sum(!samples_b$sitecode %in% sites$sitecode) # 0 sitecodes consistent with sites table
+sum(!samples_b$smpcode_f %in% miseq_samples$smpcode) # 0: good - all 137 samples_a$smpcode_f in miseq_samples.
+sum(!samples_b$sitecode %in% sites$sitecode) # 0
+sum(!samples_b$extraction_name %in% miseq_samples$extraction_name) # 0 (so sites, samples_a, and miseq_samples, consistent)
+
+c <- as.data.frame(readxl::read_excel("~/uomShare/wergData/DNA_Barcoding/DNA barcoding sample processing Spr2022.xlsx"))
+samples_c <- data.frame(sitecode  = c$sitecode, 
+                        smpcode_f = NA, # No sample code field in c
+                        date = c$`Date sampled`,
+                        monthcode = NA,
+                        extraction_name = c$`Extraction name`,
+                        n_riffle = c$`number of riffle`,
+                        comment = "collected by G Hehir, Unimelb",
+                        reach = c$reach)
+# 10 is.na n_riffles, but all included riffles according to 'sampling comments'
+samples_c$n_riffle[is.na(samples_c$n_riffle)] <- 1
+# remove 6 empty rows
+samples_c <- samples_c[!is.na(samples_c$reach),]
+samples_c$monthcode <- calcMonthDate(samples_c$date)
+# 14 records with no extraction name: not collected, therefore remove
+samples_c <- samples_c[!is.na(samples_c$extraction_name),]
+sum(!samples_c$extraction_name %in% miseq_samples$extraction_name)  # 1 inconsistent - a typo
+samples_c$extraction_name[samples_c$extraction_name == "S22KRY738"] <- "S22KRY758"
+# so, as there is no sample code field in c, make smpcode_f equal to smpcodes in miseq_samples
+samples_c$smpcode_f <- miseq_samples$smpcode_mc[match(samples_c$extraction_name, miseq_samples$extraction_name)]
+samples_c$smpcode <- samples_c$smpcode_f
+# These are incorrect, using only reach codes, and these are based on mwstr v1.2 sitecodes...
+samples_c$reach <- substr(samples_c$sitecode, 1, nchar(samples_c$sitecode)-1)
+samples_c$reach <- gsub("-","_", samples_c$reach)
+# all but five of these are in the mwbugs database, and the other 5 are just minor differences
+diff_reaches <-  c("CVD_644" = "CVD_663", "EDG_714" = "EDG_720", "LON_611" = "LON_598",
+                   "M3D_215" = "M3D_191","TN2_118" = "TN2_104")
+samples_c$reach[match(names(diff_reaches), samples_c$reach)] <- diff_reaches
+sum(!samples_c$reach %in% sites$reach_v12) #1 inconsistent - problematic french I site
+samples_c$reach[samples_c$reach == "TNK_1992"] <- "TNK_2042"
+
+samples_c$sitecode_mc <- samples_c$sitecode
+samples_c$sitecode <- sites$sitecode[match(samples_c$reach, sites$reach_v12)]
+samples_c$smpcode <- paste(samples_c$monthcode, samples_c$sitecode, sep = "-")
+
+   # 2 sitecodes consistent with sites table
+samples_c$sitecode[match(c("396-MUC-987","395-TNK-1992"), samples_c$smpcode_f)] <- c("MUC-987-0","TNK-2042-3")
+samples_c$smpcode[match(c("396-MUC-987","395-TNK-1992"), samples_c$smpcode_f)] <- c("396-MUC-987-0","396-TNK-2042-3")
+
+sum(!samples_c$sitecode %in% sites$sitecode) 
+sum(!samples_c$smpcode_f %in% miseq_samples$smpcode) # 0: good - all 137 samples_a$smpcode_f in miseq_samples.
+sum(!samples_c$extraction_name %in% miseq_samples$extraction_name) # 0 (so sites, samples_a, and miseq_samples, consistent)
+
+d <- as.data.frame(readxl::read_excel("~/uomShare/wergData/DNA_Barcoding/DNA barcoding sample processing Aut2023.xlsx"))
+# Just the ten repeated samples - note FER_648f = FER_648c (more or less!)
+samples_d <- data.frame(sitecode  = d$sitecode, 
+                        smpcode_f = NA, # No sample code field in c
+                        date = d$`Date sampled`,
+                        monthcode = NA,
+                        extraction_name = d$`Extraction name`,
+                        comment = "collected by G Hehir, Unimelb",
+                        n_riffle = d$`number of riffle`,
+                        reach = d$reach)
+# 2 without dates collected by GHD - discerned the date from their supplied file 
+# "~/uomShare/wergProj/bugDatabase/data_as_supplied/2022-23 MW Macroinvertebrate Data - Board Reporting.xlsx"
+samples_d$date[samples_d$sitecode %in% c("YAR_3589h", "FEH_4184d")] <- as.Date("2023-05-10")
+samples_d$monthcode <- calcMonthDate(samples_d$date)
+samples_d$comment[d$`Sample by` == "GHD"] <- "collected by GHD"
+sum(!samples_d$extraction_name %in% miseq_samples$extraction_name)  # 10 all inconsistent!
+unique(miseq_samples$extraction_name[grep("A23",miseq_samples$extraction_name)])
+# Not even close to consistent! Just use a manual switch
+incons_ens <- c("A23BNY29042" = "A23BNY2956",
+                "A23DNG318813" = "A23DNG13881",
+                "A23DNG79574" = "A23DNG7957",
+                "A23FEH41843" = "A23FEH4184",
+                "A23FER6475" =  "A23FER648",
+                "A23GRD75620" = "A23GRD7570",
+                "A23TOO43342" = "A23TOO4269",
+                "A23UYT1993" =  "A23UYT199",
+                "A23WMI232" = "A23WM1244",
+                "A23YAR36377" = "A23YAR3589")
+samples_d$extraction_name[match(incons_ens, samples_d$extraction_name)] <- names(incons_ens)
+sum(!samples_d$extraction_name %in% miseq_samples$extraction_name)  # 0: consistent now
+# so, as there is no sample code field in d, make smpcode_f equal to smpcodes in miseq_samples
+samples_d$smpcode_f <- miseq_samples$smpcode_mc[match(samples_d$extraction_name, miseq_samples$extraction_name)]
+samples_d$smpcode <- samples_d$smpcode_f
+# These are incorrect, using only reach codes, and these are based on mwstr v1.2 sitecodes...
+samples_d$reach <- substr(samples_d$sitecode, 1, nchar(samples_d$sitecode)-1)
+sum(!samples_d$reach %in% sites$reach_v12) # 0: all in the database
+# so, correct sitecodes
+samples_d$sitecode_mc <- samples_d$sitecode
+samples_d$sitecode <- sites$sitecode[match(samples_d$reach, sites$reach_v12)]
+samples_d$smpcode <- paste(samples_d$monthcode, samples_d$sitecode, sep = "-")
+# 2 is.na n_riffle - not clear from table d, but these sites included riffles in c, b and a
+samples_c$n_riffle[samples_c$sitecode %in% samples_d$sitecode[is.na(samples_d$n_riffle)]]
+samples_d$n_riffle[is.na(samples_d$n_riffle)] <- 1
+
+sum(!samples_d$sitecode %in% sites$sitecode) # 0 sitecodes consistent with sites table
+sum(!samples_d$smpcode_f %in% miseq_samples$smpcode) # 0: good - all samples_a$smpcode_f in miseq_samples.
+sum(!samples_d$extraction_name %in% miseq_samples$extraction_name) # 0 (so sites, samples_a, and miseq_samples, consistent)
+
+samples_miseq <- rbind(samples_a, samples_b[,match(names(samples_a),names(samples_b))],
+                     samples_c[,match(names(samples_a),names(samples_c))],
+                     samples_d[,match(names(samples_a),names(samples_d))])
+
+# Make samples table ready for import into mwbugs database
+new_samples <- as.data.frame(matrix(nrow = nrow(samples_miseq), ncol = ncol(samples)))
+names(new_samples) <- names(samples)
+for(i in 1:ncol(samples_miseq)){
+  if(names(samples_miseq)[i] %in% names(samples)) 
+    new_samples[names(samples) == names(samples_miseq)[i]] <- samples_miseq[,i]
+}
+new_samples$sitecode_v12 <- sites$sitecode_v12[match(new_samples$sitecode, sites$sitecode)]
+new_samples$sourcecode <- 66
+new_samples$processing_method <- processing_methods$processing_method[processing_methods$pcode == "P"] 
+  # i.e. "two samples combined, homogenized, DNA-metabarcoded"
+new_samples$collection_method <- "RBA edge-riffle combined"
+new_samples$collection_method[samples_miseq$n_riffle == 0] <- "RBA two edges combined"
+new_samples$comment = "count value is number of records from 3 miseq replicates"
+new_samples$comment[new_samples$smpcode == "384-ANS-1611-6-DP"] <- "count value is number of records from 2 miseq replicates"
+new_samples$embargoed <- 1
+new_samples$old_samplecode <- samples_miseq$smpcode_f
+new_samples$dry_no_sample <- 0  
+smpcode_vec <- new_samples$smpcode
+new_samples$smpcode <- paste0(smpcode_vec, "-DP")
+new_samples$smpcode[samples_miseq$n_riffle == 0] <- paste0(smpcode_vec[samples_miseq$n_riffle == 0], "-EP")
+
+# Add the new sourcecode to the mwbugs spv table.
+new_spv <- data.frame(sourcecode = 66, project = "ARC LP DNA metabarcoding", reference = NA,
+                      e_source = "github.com/mecarew/metabarcoding_workflow/src_water_prod/Appendix3_import_miseq_to_mwbugs.qmd",
+                      file_locations = 
+"wergStaff/MelCarew/git-data/metabarcoding_workflow",
+lab = "PEARG and WERG Unimelb, led by Melissa Carew",
+comment = NA)
+```
+
+
+Assemble biological data for import into database
+
+```{r}
+# # some max_p_identity inconsistencies
+# x <- unique(bugdata_spp[c("asv_code","max_p_identity","amplicon")])
+# x <- x[duplicated(x$asv_code) | duplicated(x$asv_code, fromLast = TRUE),]
+# x[order(x$asv_code),]
+
+# Ad hoc corrections to 3 inconsistent max_p_identity values (the first concerning
+# "Austropsyche sp. B-AAW3080", above)
+bugdata_spp$max_p_identity[bugdata_spp$asv_code == "00f4bc36686affa317cbbdbad7a65991"] <- 99.7
+bugdata_spp$max_p_identity[bugdata_spp$asv_code == "bfb774b22881eee84f0f221daeb9d157"] <- 100
+bugdata_spp$max_p_identity[bugdata_spp$asv_code == "ed6b0b7d5ab0813489018124e4f46c1e"] <- 99.7
+
+bugdata_spp$extraction_name <- substr(bugdata_spp$sample,1,nchar(bugdata_spp$sample)-4)
+bugdata_spp$smpcode <- samples_miseq$smpcode[match(bugdata_spp$extraction_name, 
+                                                   samples_miseq$extraction_name)]
+# The NAs introduced here are the three samples (1418 records) with smpcodes starting with 337 excluded above
+sequences <- unique(bugdata_spp[c("asv_code","asv_seq","max_p_identity","amplicon")])
+
+biota_wrkng <- bugdata_spp[c("sample","smpcode","asv_code","species")]
+biota_wrkng <- biota_wrkng[!is.na(biota_wrkng$smpcode),]
+biota_wrkng$bugcode <- taxon_all$shortcode[match(biota_wrkng$species, taxon_all$taxon)]
+for(i in which(is.na(biota_wrkng$bugcode))){
+    biota_wrkng$bugcode[i] <- new_spp$bugcode[new_spp$species == biota_wrkng$species[i]]
+   }
+sample_asv <- unique(biota_wrkng[c("asv_code","smpcode")])
+bugcode_asv <- unique(biota_wrkng[c("asv_code","bugcode")])
+
+biota_agg <- aggregate(biota_wrkng$bugcode, by = list(smpcode = biota_wrkng$smpcode,
+                                                      taxoncode = biota_wrkng$bugcode,
+                                                      species = biota_wrkng$species), FUN = length)
+
+new_biota <- data.frame(smpcode = biota_agg$smpcode,
+                        taxoncode = biota_agg$taxoncode,
+                        count = biota_agg$x,
+                        taxon = biota_agg$species, 
+                        coarsepick = 0, 
+                        notes = "",
+                        originalbugcode = NA,
+                        shortcode = NA)
+
+# Add records only identified to genus:
+bugdata_gen$extraction_name <- substr(bugdata_gen$sample,1,nchar(bugdata_gen$sample)-4)
+bugdata_gen$smpcode <- samples_miseq$smpcode[match(bugdata_gen$extraction_name, 
+                                                   samples_miseq$extraction_name)]
+sequences <- rbind(sequences,
+                   unique(bugdata_gen[c("asv_code","asv_seq","max_p_identity","amplicon")]))
+# NAs introduced as above
+biota_wrkng <- bugdata_gen[c("sample","smpcode","asv_code","genus")]
+biota_wrkng <- biota_wrkng[!is.na(biota_wrkng$smpcode),]
+biota_wrkng$bugcode <- paste0(taxon_gen$gencode[match(biota_wrkng$genus, taxon_gen$genus)],"99")
+
+biota_agg <- aggregate(biota_wrkng$bugcode, by = list(smpcode = biota_wrkng$smpcode,
+                                                      taxoncode = biota_wrkng$bugcode,
+                                                      species = biota_wrkng$genus), 
+                                                      FUN = length)
+biota_agg$species <- paste0(biota_agg$species, " sp. (Unident.)")
+
+new_biota <- rbind(new_biota, data.frame(smpcode = biota_agg$smpcode,
+                        taxoncode = biota_agg$taxoncode,
+                        count = biota_agg$x,
+                        taxon = biota_agg$species, 
+                        coarsepick = 0, 
+                        notes = "",
+                        originalbugcode = NA,
+                        shortcode = NA))
+
+sample_asv <- rbind(sample_asv, unique(biota_wrkng[c("asv_code","smpcode")]))
+bugcode_asv <- rbind(bugcode_asv, unique(biota_wrkng[c("asv_code","bugcode")]))
+
+# Add records only identified to family:
+bugdata_fam$extraction_name <- substr(bugdata_fam$sample,1,nchar(bugdata_fam$sample)-4)
+bugdata_fam$smpcode <- samples_miseq$smpcode[match(bugdata_fam$extraction_name, 
+                                                   samples_miseq$extraction_name)]
+# NAs introduced as above
+sequences <- rbind(sequences,
+                   unique(bugdata_fam[c("asv_code","asv_seq","max_p_identity","amplicon")]))
+biota_wrkng <- bugdata_fam[c("sample","smpcode","asv_code","family")]
+biota_wrkng$extraction_name <- substr(biota_wrkng$sample,1,nchar(biota_wrkng$sample)-4)
+biota_wrkng$smpcode <- samples_miseq$smpcode[match(biota_wrkng$extraction_name, 
+                                                   samples_miseq$extraction_name)]
+biota_wrkng <- biota_wrkng[!is.na(biota_wrkng$smpcode),]
+biota_wrkng$bugcode <- paste0(taxon_fam$famcode[match(biota_wrkng$family, taxon_fam$family)],"9999")
+biota_agg <- aggregate(biota_wrkng$bugcode, by = list(smpcode = biota_wrkng$smpcode,
+                                                      taxoncode = biota_wrkng$bugcode,
+                                                      species = biota_wrkng$family), 
+                                                      FUN = length)
+biota_agg$species <- paste0(biota_agg$species, " sp. (Unident.)")
+new_biota <- rbind(new_biota, data.frame(smpcode = biota_agg$smpcode,
+                        taxoncode = biota_agg$taxoncode,
+                        count = 1,
+                        taxon = biota_agg$species, 
+                        coarsepick = 0, 
+                        notes = "",
+                        originalbugcode = NA,
+                        shortcode = NA))
+
+sample_asv <- rbind(sample_asv, unique(biota_wrkng[c("asv_code","smpcode")]))
+bugcode_asv <- rbind(bugcode_asv, unique(biota_wrkng[c("asv_code","bugcode")]))
+
+#####
+x <- bugcode_asv[duplicated(bugcode_asv$asv_code) | duplicated(bugcode_asv$asv_code, fromLast = TRUE),]
+# 0 asv_codes with > 1 identification
+
+new_biota <- new_biota[order(new_biota$smpcode),]
+```
+
+
+```{r}
+bins <- as.data.frame(readxl::read_excel("data/asv_library_corrected.xlsx", sheet = 3))
+bins <- bins[!is.na(bins$bin_uri),]
+
+miseq_data <- rbind(bugdata_spp[c("sample","asv_code","reads")],
+                    bugdata_gen[c("sample","asv_code","reads")],
+                    bugdata_fam[c("sample","asv_code","reads")])
+miseq_data <- dplyr::mutate(miseq_data, 
+                            smpcode = miseq_data$smpcode[match(miseq_data$sample, 
+                                                               miseq_samples$seq_code)],
+                            .after = sample)
+
+ reads_tab <- dplyr::mutate(miseq_data, 
+                            smpcode = miseq_samples$smpcode[match(miseq_data$sample, miseq_samples$seq_code)],
+                            bugcode = bugcode_asv$bugcode[match(miseq_data$asv_code, bugcode_asv$asv_code)], 
+                            .after = sample)
+ reads_tab <- dplyr::mutate(reads_tab, 
+                            taxon = new_biota$taxon[match(paste0(reads_tab$smpcode,reads_tab$bugcode),
+                                                          paste0(new_biota$smpcode,new_biota$taxoncode))],
+                            .after = bugcode)
+```
+
+```{r}
+#Build xlsx file for inspection prior to adding these data to the mwbugs database
+table_list <- list(sites = sites[sites$sitecode %in% unique(new_samples$sitecode),],
+                   new_samples = new_samples,
+                   new_biota = new_biota,
+                   collection_methods = collection_methods[collection_methods$ccode %in% c("D","E"),],
+                   processing_methods = processing_methods[processing_methods$pcode %in% c("P"),],
+                   new_spv = new_spv,
+                   sequences = sequences,
+                   bugcode_asv = bugcode_asv, 
+                   sample_asv = sample_asv,
+                   new_taxon_spp = new_taxon_spp,
+                   new_morphospp_etc = new_morphospp_etc, 
+                   miseq_samples = miseq_samples,
+                   miseq_data = miseq_data,
+                   bins = bins)
+WriteXLS::WriteXLS(table_list, "~/temp/arc_metabarcoding_data_for_mwbugs_db.xlsx")
+
+```
